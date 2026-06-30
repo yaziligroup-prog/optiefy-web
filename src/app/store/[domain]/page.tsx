@@ -20,6 +20,7 @@ export default async function StorePage({ params }: Props) {
     .select("*, products(*)")
     .eq("custom_domain", domain)
     .eq("status", "active")
+    .order("created_at", { ascending: false })
     .limit(1)
     .single();
 
