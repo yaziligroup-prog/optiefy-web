@@ -321,7 +321,7 @@ function PlanCard({
       onClick={onClick}
       whileHover={{ y: -2 }}
       whileTap={{ scale: 0.98 }}
-      className="relative flex-1 text-left rounded-2xl overflow-hidden"
+      className="relative w-full text-left rounded-2xl overflow-hidden"
       style={{
         ...tr,
         border: isSelected
@@ -548,7 +548,7 @@ function PreviewContent() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "#FAFAF8" }}>
+    <div className="min-h-screen flex flex-col overflow-x-hidden" style={{ background: "#FAFAF8" }}>
 
       {/* ── Top bar ── */}
       <header
@@ -587,7 +587,7 @@ function PreviewContent() {
           className="w-full lg:w-[460px] lg:fixed lg:top-14 lg:bottom-0 lg:left-0 lg:overflow-y-auto flex flex-col"
           style={{ borderRight: "1px solid rgba(0,0,0,0.06)" }}
         >
-          <div className="flex flex-col gap-6 px-7 py-8 flex-1">
+          <div className="flex flex-col gap-6 px-4 sm:px-7 py-6 sm:py-8 flex-1">
 
             {/* Success header */}
             <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }}>
@@ -654,10 +654,32 @@ function PreviewContent() {
                   />
                 ))}
               </div>
-              <p className="text-xs mt-3" style={{ color: "#C4C4C0", fontFamily: bodyFont }}>
+              <p className="hidden lg:block text-xs mt-3" style={{ color: "#C4C4C0", fontFamily: bodyFont }}>
                 Canlı önizlemede sağ taraftan görünümü inceleyin
               </p>
             </motion.div>
+
+            {/* ── Mobile-only inline preview ── */}
+            <div
+              className="lg:hidden -mx-4 sm:-mx-7"
+              style={{ background: "#0F172A", paddingTop: 20, paddingBottom: 24 }}
+            >
+              <p className="text-slate-400 text-xs font-medium mb-5 tracking-wider uppercase text-center" style={{ fontFamily: bodyFont }}>
+                Canlı Önizleme
+              </p>
+              <div style={{ overflow: "hidden", position: "relative", height: 515 }}>
+                <div style={{ display: "flex", justifyContent: "center", transform: "scale(0.78)", transformOrigin: "top center" }}>
+                  <PhoneFrame
+                    storeId={storeId!}
+                    activeTheme={activeTheme}
+                    iframeRef={null}
+                    iframeLoaded={false}
+                    onIframeLoad={() => {}}
+                    accentColor={THEMES[activeTheme].accentColor}
+                  />
+                </div>
+              </div>
+            </div>
 
             {/* ── Divider ── */}
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
@@ -710,7 +732,7 @@ function PreviewContent() {
                 </div>
               </div>
 
-              <div className="flex gap-2.5">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {PLANS.map((plan) => (
                   <PlanCard
                     key={plan.id}
@@ -815,26 +837,6 @@ function PreviewContent() {
             }}
             accentColor={THEMES[activeTheme].accentColor}
           />
-        </div>
-
-        {/* Mobile-only mockup (below controls) */}
-        <div
-          className="flex lg:hidden flex-col items-center py-8 px-4 w-full"
-          style={{ background: "#0F172A" }}
-        >
-          <p className="text-slate-400 text-xs font-medium mb-4 tracking-wider uppercase">
-            Canlı Önizleme
-          </p>
-          <div style={{ transform: "scale(0.78)", transformOrigin: "top center" }}>
-            <PhoneFrame
-              storeId={storeId!}
-              activeTheme={activeTheme}
-              iframeRef={null}
-              iframeLoaded={false}
-              onIframeLoad={() => {}}
-              accentColor={THEMES[activeTheme].accentColor}
-            />
-          </div>
         </div>
 
       </div>
