@@ -1484,20 +1484,96 @@ export default function Home() {
             </section>
 
             {/* ─── FOOTER ───────────────────────────────────────────────────── */}
-            <footer className="py-10 px-6" style={{ ...tr, background: c.bg, borderTop: `1px solid ${c.border}` }}>
-              <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-5">
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded-md flex items-center justify-center" style={{ background: "linear-gradient(135deg,#7C3AED,#6366F1)" }}>
-                    <OptiefyIcon size={11} color="white" />
+            <footer className="px-6 pt-12 pb-8" style={{ ...tr, background: c.bg, borderTop: `1px solid ${c.border}` }}>
+              <div className="max-w-5xl mx-auto">
+
+                {/* ─ 3-column grid ─ */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10 mb-10">
+
+                  {/* Col 1: Brand */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg,#7C3AED,#6366F1)" }}>
+                        <OptiefyIcon size={13} color="white" />
+                      </div>
+                      <span className="font-semibold text-sm tracking-tight" style={{ color: c.text, fontFamily: bodyFont, ...tr }}>Optiefy</span>
+                    </div>
+                    <p className="text-xs leading-relaxed mb-4" style={{ color: c.textSubtle, fontFamily: bodyFont, ...tr }}>
+                      Türkiye&apos;nin en hızlı AI destekli e-ticaret vitrin platformu. Dakikalar içinde mağazan, anında satış.
+                    </p>
+                    <p className="text-xs" style={{ color: c.textSubtle, fontFamily: bodyFont, ...tr }}>
+                      © 2026 Optiefy. Tüm Hakları Saklıdır.
+                    </p>
                   </div>
-                  <span className="font-semibold text-sm tracking-tight" style={{ color: c.text, fontFamily: bodyFont, ...tr }}>Optiefy</span>
+
+                  {/* Col 2: Legal links */}
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: c.textSubtle, fontFamily: bodyFont, ...tr }}>Yasal</p>
+                    <nav className="flex flex-col gap-2.5">
+                      {[
+                        { label: "Mesafeli Satış Sözleşmesi", href: "/mesafeli-satis-sozlesmesi" },
+                        { label: "Gizlilik Politikası ve KVKK", href: "/gizlilik-ve-kvkk" },
+                        { label: "İptal, İade ve Değişim", href: "/iptal-ve-iade" },
+                        { label: "Kullanım Koşulları", href: "/mesafeli-satis-sozlesmesi" },
+                      ].map(({ label, href }) => (
+                        <a
+                          key={label}
+                          href={href}
+                          className="text-xs hover:opacity-70 transition-opacity"
+                          style={{ color: c.textSubtle, fontFamily: bodyFont, textDecoration: "none", ...tr }}
+                        >
+                          {label}
+                        </a>
+                      ))}
+                    </nav>
+                  </div>
+
+                  {/* Col 3: Company info */}
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: c.textSubtle, fontFamily: bodyFont, ...tr }}>Şirket Bilgileri</p>
+                    <p className="text-xs font-semibold mb-2" style={{ color: c.text, fontFamily: bodyFont, ...tr }}>
+                      YAZILI GROUP DIŞ TİCARET LİMİTED ŞİRKETİ
+                    </p>
+                    <div className="flex flex-col gap-1.5">
+                      <a
+                        href="mailto:info@optiefy.com"
+                        className="text-xs hover:opacity-70 transition-opacity"
+                        style={{ color: c.textSubtle, fontFamily: bodyFont, textDecoration: "none", ...tr }}
+                      >
+                        📧 info@optiefy.com
+                      </a>
+                      <p className="text-xs" style={{ color: c.textSubtle, fontFamily: bodyFont, ...tr }}>
+                        📍 İstanbul, Türkiye
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
-                  {["Gizlilik Politikası", "Kullanım Koşulları", "KVKK", "İletişim"].map((l) => (
-                    <a key={l} href="#" className="text-xs hover:opacity-60 transition-opacity" style={{ color: c.textSubtle, fontFamily: bodyFont, ...tr }}>{l}</a>
-                  ))}
+
+                {/* ─ Bottom bar ─ */}
+                <div
+                  className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6"
+                  style={{ borderTop: `1px solid ${c.border}`, ...tr }}
+                >
+                  <p className="text-xs text-center sm:text-left" style={{ color: c.textSubtle, fontFamily: bodyFont, ...tr }}>
+                    YAZILI GROUP DIŞ TİCARET LİMİTED ŞİRKETİ · optiefy.com
+                  </p>
+                  <div className="flex items-center gap-4">
+                    {[
+                      { label: "KVKK", href: "/gizlilik-ve-kvkk" },
+                      { label: "İade Politikası", href: "/iptal-ve-iade" },
+                      { label: "İletişim", href: "mailto:info@optiefy.com" },
+                    ].map(({ label, href }) => (
+                      <a
+                        key={label}
+                        href={href}
+                        className="text-xs hover:opacity-70 transition-opacity"
+                        style={{ color: c.textSubtle, fontFamily: bodyFont, textDecoration: "none", ...tr }}
+                      >
+                        {label}
+                      </a>
+                    ))}
+                  </div>
                 </div>
-                <p className="text-xs" style={{ color: c.textSubtle, fontFamily: bodyFont, ...tr }}>© 2026 Optiefy. Tüm Hakları Saklıdır.</p>
               </div>
             </footer>
           </motion.div>
