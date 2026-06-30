@@ -20,9 +20,12 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // www.domain.com → domain.com normalise (DB her zaman apex domain saklar)
+  const apex = hostname.startsWith("www.") ? hostname.slice(4) : hostname;
+
   // Custom mağaza domain'i → vitrin sayfasına sessiz rewrite
   const url = req.nextUrl.clone();
-  url.pathname = `/store/${hostname}${pathname === "/" ? "" : pathname}`;
+  url.pathname = `/store/${apex}${pathname === "/" ? "" : pathname}`;
   return NextResponse.rewrite(url);
 }
 
