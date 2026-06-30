@@ -347,7 +347,7 @@ function simulateAvailability(name: string, tld: string): boolean {
 
 type DomainResult = { tld: string; raw: number; optiefyPrice: number; available: boolean };
 
-const OPTIEFY_IP = "185.199.108.153";
+const OPTIEFY_IP = "76.76.21.21";
 
 function StoreBuilderForm({ isDark, c, displayFont, bodyFont, onSubmit }: StoreBuilderFormProps) {
   const [step,         setStep]        = useState(0);
@@ -571,7 +571,7 @@ function StoreBuilderForm({ isDark, c, displayFont, bodyFont, onSubmit }: StoreB
                       <p style={{ color: c.textMuted }}>Domain sağlayıcınızın panelinde şu kayıtları ekleyin:</p>
                       <div className="rounded-lg px-3 py-2 mt-1.5 font-mono text-[11px] space-y-1" style={{ background: isDark ? "rgba(0,0,0,0.3)" : "#EBEBEB", color: c.text }}>
                         <div><span style={{ color: "#F59E0B" }}>A</span>{"  "}@{"  →  "}{OPTIEFY_IP}</div>
-                        <div><span style={{ color: "#60A5FA" }}>CNAME</span>{"  "}www{"  →  "}stores.optiefy.com</div>
+                        <div><span style={{ color: "#60A5FA" }}>CNAME</span>{"  "}www{"  →  "}cname.vercel-dns.com</div>
                       </div>
                       <p className="mt-1" style={{ color: c.textSubtle }}>DNS yayılması 24 saate kadar sürebilir.</p>
                     </div>

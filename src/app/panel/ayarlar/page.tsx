@@ -581,9 +581,8 @@ function DomainSection({ c }: { c: PanelPalette }) {
 
   // Build DNS record list from result
   const dnsRecords: DnsRecord[] = result ? [
-    { type: "A",     name: "@",   value: "216.198.79.1", note: "Ana domain (apex) için — Vercel Rank 1" },
-    { type: "A",     name: "@",   value: "64.29.17.1",   note: "Yedek A kaydı (opsiyonel, yüksek erişilebilirlik)" },
-    { type: "CNAME", name: "www", value: "32ee1f553b42a07c.vercel-dns-017.com.", note: "www için — bu projeye özel CNAME" },
+    { type: "A",     name: "@",   value: "76.76.21.21",         note: "Ana domain (apex) için Vercel A kaydı" },
+    { type: "CNAME", name: "www", value: "cname.vercel-dns.com", note: "www subdomain için Vercel CNAME kaydı" },
     ...(result.verificationRecords?.map((v) => ({
       type: "TXT",
       name: v.domain.replace(`.${result.domain}`, "") || "@",
@@ -608,7 +607,7 @@ function DomainSection({ c }: { c: PanelPalette }) {
         </div>
         <div>
           <h2 className="text-base font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Özel Domain Bağla</h2>
-          <p className="text-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>vivinth.com gibi kendi alan adınızı mağazanıza yönlendirin</p>
+          <p className="text-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>Kendi alan adınızı mağazanıza yönlendirin</p>
         </div>
       </div>
 
