@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import { migrateStoreImages } from "@/utils/supabase/upload-images";
 
 export async function POST(req: NextRequest) {
   try {
@@ -60,6 +61,23 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error) throw new Error(`Supabase: ${error.message} (kod: ${error.code})`);
+
+    // Storage upload — base64 varsa arka planda URL'e çevir
+    const allImages = [
+      ...(image_urls ?? []),
+      ...(imageBase64 ? [imageBase64] : []),
+    ].filter((u) => u?.startsWith("data:"));
+
+    if (allImages.length > 0) {
+      const sourceUrls = image_urls?.length ? image_urls : [imageBase64!];
+      const { urls, changed } = await migrateStoreImages(supabase, inserted.id, sourceUrls);
+      if (changed) {
+        await supabase
+          .from("stores")
+          .update({ image_urls: urls, product_image_base64: null })
+          .eq("id", inserted.id);
+      }
+    }
 
     return NextResponse.json({ success: true, storeId: inserted.id });
   } catch (err: unknown) {

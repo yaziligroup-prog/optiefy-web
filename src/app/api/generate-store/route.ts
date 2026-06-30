@@ -30,6 +30,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import OpenAI, { toFile } from "openai";
+import { migrateStoreImages } from "@/utils/supabase/upload-images";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -585,6 +586,20 @@ export async function POST(req: NextRequest) {
       throw new Error(`Mağaza kaydedilemedi: ${storeErr.message}`);
     }
 
+    // ── Storage upload — base64 → gerçek URL ─────────────────────────────────────
+    // Başarısız olursa sessizce base64'e düşer; bucket yoksa hata vermez.
+    let finalImageUrls = imageUrls;
+    if (imageUrls && imageUrls.length > 0) {
+      const { urls, changed } = await migrateStoreImages(supabase, store.id, imageUrls);
+      if (changed) {
+        finalImageUrls = urls;
+        await supabase
+          .from("stores")
+          .update({ image_urls: urls, product_image_base64: null })
+          .eq("id", store.id);
+      }
+    }
+
     // ── Products insert ───────────────────────────────────────────────────────────
     if (generated.products.length > 0) {
       const productRows = generated.products.map((p, i) => ({
@@ -593,8 +608,7 @@ export async function POST(req: NextRequest) {
         name:          p.name,
         size_variants: p.size_variants,
         price:         p.price > 0 ? p.price : finalPrice,
-        // İlk ürüne Photoroom'un beyaz versiyonunu ata (varsa)
-        ...(imageUrls && imageUrls[i] ? { image_url: imageUrls[i] } : {}),
+        ...(finalImageUrls && finalImageUrls[i] ? { image_url: finalImageUrls[i] } : {}),
       }));
 
       const { error: prodErr } = await supabase.from("products").insert(productRows);
@@ -606,7 +620,7 @@ export async function POST(req: NextRequest) {
       storeId:         store.id,
       storeName:       generated.store_name,
       detectedProduct: generated.detected_product,
-      imageCount:      imageUrls?.length ?? 0,
+      imageCount:      finalImageUrls?.length ?? 0,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Beklenmedik bir hata oluştu";
