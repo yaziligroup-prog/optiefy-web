@@ -441,11 +441,13 @@ function PreviewContent() {
   const [activeTheme,   setActiveTheme]   = useState<ThemeId>("modern");
   const [billing,       setBilling]       = useState<Billing>("monthly");
   const [selectedPlan,  setSelectedPlan]  = useState<PlanId>("launch");
-  const [submitting,    setSubmitting]    = useState(false);
-  const [iframeLoaded,  setIframeLoaded]  = useState(false);
+  const [submitting,         setSubmitting]         = useState(false);
+  const [iframeLoaded,       setIframeLoaded]       = useState(false);
+  const [mobileIframeLoaded, setMobileIframeLoaded] = useState(false);
 
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const iframeRef    = useRef<HTMLIFrameElement>(null);
+  const saveTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const iframeRef       = useRef<HTMLIFrameElement>(null);
+  const mobileIframeRef = useRef<HTMLIFrameElement>(null);
 
   const displayFont = "var(--font-display), Georgia, 'Times New Roman', serif";
   const bodyFont    = "var(--font-body), system-ui, -apple-system, sans-serif";
@@ -483,10 +485,9 @@ function PreviewContent() {
   const handleThemeChange = (themeId: ThemeId) => {
     setActiveTheme(themeId);
     saveThemeDebounced(themeId);
-    iframeRef.current?.contentWindow?.postMessage(
-      { type: "optiefy-preview-theme", theme: themeId },
-      window.location.origin,
-    );
+    const msg = { type: "optiefy-preview-theme", theme: themeId };
+    iframeRef.current?.contentWindow?.postMessage(msg, window.location.origin);
+    mobileIframeRef.current?.contentWindow?.postMessage(msg, window.location.origin);
   };
 
   const handleGoToPanel = async () => {
@@ -662,23 +663,35 @@ function PreviewContent() {
             {/* ── Mobile-only inline preview ── */}
             <div
               className="lg:hidden -mx-4 sm:-mx-7"
-              style={{ background: "#0F172A", paddingTop: 20, paddingBottom: 24 }}
+              style={{ background: "#0F172A", paddingTop: 16, paddingBottom: 16 }}
             >
-              <p className="text-slate-400 text-xs font-medium mb-5 tracking-wider uppercase text-center" style={{ fontFamily: bodyFont }}>
-                Canlı Önizleme
-              </p>
-              <div style={{ overflow: "hidden", position: "relative", height: 515 }}>
-                <div style={{ display: "flex", justifyContent: "center", transform: "scale(0.78)", transformOrigin: "top center" }}>
+              <div className="flex items-center justify-between px-5 mb-3">
+                <p className="text-slate-400 text-[10px] font-bold tracking-widest uppercase" style={{ fontFamily: bodyFont }}>
+                  Canlı Önizleme
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                  <span className="text-[9px] font-semibold text-green-400" style={{ fontFamily: bodyFont }}>
+                    {mobileIframeLoaded ? "Yüklendi" : "Yükleniyor…"}
+                  </span>
+                </div>
+              </div>
+              <div style={{ overflow: "hidden", position: "relative", height: 410 }}>
+                <div style={{ display: "flex", justifyContent: "center", transform: "scale(0.62)", transformOrigin: "top center" }}>
                   <PhoneFrame
                     storeId={storeId!}
                     activeTheme={activeTheme}
-                    iframeRef={null}
-                    iframeLoaded={false}
-                    onIframeLoad={() => {}}
+                    iframeRef={mobileIframeRef}
+                    iframeLoaded={mobileIframeLoaded}
+                    onIframeLoad={() => setMobileIframeLoaded(true)}
                     accentColor={THEMES[activeTheme].accentColor}
                   />
                 </div>
               </div>
+              {/* Swipe hint */}
+              <p className="text-center text-slate-500 text-[9px] mt-2 mb-1" style={{ fontFamily: bodyFont }}>
+                ↓ Paketleri görmek için aşağı kaydır
+              </p>
             </div>
 
             {/* ── Divider ── */}
