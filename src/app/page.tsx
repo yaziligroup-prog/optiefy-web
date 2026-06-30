@@ -1064,7 +1064,7 @@ export default function Home() {
                     ...tr,
                   }}
                 >
-                  Satışa hazır<br />e-ticaret<br />altyapısı
+                  Satışa Hazır<br />E-ticaret<br />Altyapısı
                 </motion.h1>
 
                 <motion.p
