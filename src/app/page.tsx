@@ -1173,79 +1173,165 @@ export default function Home() {
               <div className="max-w-5xl mx-auto">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-start">
 
-                  {/* Left: overlapping store mock cards */}
+                  {/* Left: lifestyle store showcase */}
                   <motion.div
                     initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.55 }}
                     className="relative"
                   >
-                    <div style={{ position: "relative", height: 380 }}>
-                      {/* Back card */}
+                    <div style={{ position: "relative", height: 420 }}>
+
+                      {/* Ambient glow */}
                       <div style={{
-                        position: "absolute", inset: 0,
-                        transform: "rotate(2.5deg) translate(14px, -12px)",
-                        zIndex: 1, borderRadius: 20, overflow: "hidden",
-                        boxShadow: "0 24px 64px rgba(0,0,0,0.2)",
-                        background: "#0F2417",
+                        position: "absolute", inset: -60, pointerEvents: "none",
+                        background: "radial-gradient(ellipse at 45% 55%, rgba(124,58,237,0.11) 0%, rgba(236,72,153,0.07) 50%, transparent 72%)",
+                        filter: "blur(24px)",
+                      }} />
+
+                      {/* Browser chrome frame */}
+                      <div style={{
+                        position: "relative", borderRadius: 18, overflow: "hidden",
+                        boxShadow: "0 28px 72px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.07)",
+                        background: "#FFFFFF",
+                        height: 376,
                       }}>
-                        <div className="flex items-center justify-between px-5 pt-5 pb-4">
-                          <div className="flex items-center gap-2">
-                            <div style={{ width: 20, height: 20, borderRadius: 6, background: "#22C55E" }} />
-                            <div style={{ width: 80, height: 8, borderRadius: 4, background: "rgba(255,255,255,0.12)" }} />
+                        {/* URL bar */}
+                        <div style={{ height: 38, background: "#F4F4F2", display: "flex", alignItems: "center", padding: "0 14px", gap: 7, borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+                          <div style={{ display: "flex", gap: 5 }}>
+                            <div style={{ width: 9, height: 9, borderRadius: 99, background: "#FC5F57" }} />
+                            <div style={{ width: 9, height: 9, borderRadius: 99, background: "#FDBB2F" }} />
+                            <div style={{ width: 9, height: 9, borderRadius: 99, background: "#27C840" }} />
                           </div>
-                          <div style={{ padding: "3px 10px", borderRadius: 99, fontSize: 9, fontWeight: 700, color: "white", background: "#22C55E", fontFamily: bodyFont }}>YENİ</div>
+                          <div style={{ flex: 1, margin: "0 8px", height: 22, borderRadius: 7, background: "white", display: "flex", alignItems: "center", paddingLeft: 9, gap: 5, border: "1px solid rgba(0,0,0,0.07)" }}>
+                            <div style={{ width: 6, height: 6, borderRadius: 99, background: "#22C55E", flexShrink: 0 }} />
+                            <span style={{ fontSize: 9, color: "#9CA3AF", fontFamily: bodyFont }}>elif-butik.optiefy.com</span>
+                          </div>
                         </div>
-                        <div style={{ margin: "0 20px", borderRadius: 14, height: 210, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
-                          <div style={{ textAlign: "center", padding: "0 16px" }}>
-                            <div style={{ width: 48, height: 48, borderRadius: 12, margin: "0 auto 12px", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(34,197,94,0.15)" }}>
-                              <Sparkles style={{ width: 20, height: 20, color: "#22C55E" }} />
+
+                        {/* Store hero — lifestyle gradient */}
+                        <div style={{
+                          height: 185,
+                          background: "linear-gradient(135deg, #1a0533 0%, #2d1b69 35%, #7c2d8e 65%, #c2185b 100%)",
+                          position: "relative", overflow: "hidden",
+                          display: "flex", flexDirection: "column", justifyContent: "flex-end",
+                          padding: "0 20px 18px",
+                        }}>
+                          {/* Decorative blobs simulating soft bokeh photography */}
+                          <div style={{ position: "absolute", top: -40, right: -30, width: 200, height: 200, borderRadius: 99, background: "rgba(236,72,153,0.22)", filter: "blur(40px)" }} />
+                          <div style={{ position: "absolute", top: 10, left: 20, width: 120, height: 120, borderRadius: 99, background: "rgba(124,58,237,0.28)", filter: "blur(28px)" }} />
+                          <div style={{ position: "absolute", bottom: -20, right: 60, width: 90, height: 90, borderRadius: 99, background: "rgba(59,130,246,0.18)", filter: "blur(20px)" }} />
+
+                          {/* Simulated fashion items */}
+                          <div style={{ position: "absolute", top: 18, right: 18, display: "flex", gap: 7, alignItems: "flex-end" }}>
+                            {[
+                              { h: 56, bg: "linear-gradient(160deg,rgba(233,30,140,0.6),rgba(233,30,140,0.2))" },
+                              { h: 72, bg: "linear-gradient(160deg,rgba(255,255,255,0.22),rgba(255,255,255,0.06))" },
+                              { h: 48, bg: "linear-gradient(160deg,rgba(124,58,237,0.55),rgba(124,58,237,0.15))" },
+                            ].map((s, i) => (
+                              <div key={i} style={{ width: 34, height: s.h, borderRadius: 9, background: s.bg, border: "1px solid rgba(255,255,255,0.15)", backdropFilter: "blur(4px)" }} />
+                            ))}
+                          </div>
+
+                          <div style={{ position: "relative" }}>
+                            <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: "0.14em", color: "rgba(255,255,255,0.45)", marginBottom: 5, fontFamily: bodyFont, textTransform: "uppercase" }}>Elif Butik — Yeni Sezon</div>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: "white", fontFamily: bodyFont, lineHeight: 1.15, letterSpacing: "-0.01em" }}>El Yapımı<br />Koleksiyonlar</div>
+                            <div style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.12)", backdropFilter: "blur(6px)", borderRadius: 20, padding: "4px 10px", border: "1px solid rgba(255,255,255,0.18)" }}>
+                              <div style={{ width: 5, height: 5, borderRadius: 99, background: "#22C55E" }} />
+                              <span style={{ fontSize: 9, fontWeight: 600, color: "rgba(255,255,255,0.85)", fontFamily: bodyFont }}>84 ürün · Canlıda</span>
                             </div>
-                            <p style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.75)", fontFamily: bodyFont, marginBottom: 4 }}>Naturel Köy</p>
-                            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.38)", fontFamily: bodyFont }}>Organik gıda ürünleri</p>
                           </div>
                         </div>
-                        <div style={{ margin: "16px 20px 0" }}>
-                          <div style={{ height: 5, borderRadius: 99, background: "rgba(255,255,255,0.06)" }}>
-                            <div style={{ height: "100%", borderRadius: 99, background: "#22C55E", width: "54%" }} />
-                          </div>
-                          <p style={{ fontSize: 10, marginTop: 6, color: "rgba(255,255,255,0.28)", fontFamily: bodyFont }}>54 sipariş bu ay</p>
+
+                        {/* Product cards row */}
+                        <div style={{ padding: "14px 16px 10px", display: "flex", gap: 9 }}>
+                          {[
+                            { name: "Deri Çanta", price: "₺890", g1: "#f093fb", g2: "#f5576c", tag: "Çok Satan" },
+                            { name: "İpek Fular", price: "₺340", g1: "#4facfe", g2: "#00f2fe", tag: "Yeni" },
+                            { name: "Kolye Set", price: "₺220", g1: "#f7971e", g2: "#ffd200", tag: "" },
+                          ].map((p, i) => (
+                            <div key={i} style={{ flex: 1, borderRadius: 11, overflow: "hidden", boxShadow: "0 2px 10px rgba(0,0,0,0.09)", border: "1px solid rgba(0,0,0,0.05)" }}>
+                              <div style={{
+                                height: 88,
+                                background: `linear-gradient(135deg, ${p.g1}45, ${p.g2}30)`,
+                                position: "relative", display: "flex", alignItems: "center", justifyContent: "center",
+                              }}>
+                                {p.tag && (
+                                  <div style={{ position: "absolute", top: 5, left: 5, fontSize: 7, fontWeight: 800, color: "white", background: "linear-gradient(135deg,#7C3AED,#9333EA)", padding: "2px 6px", borderRadius: 5, fontFamily: bodyFont, letterSpacing: "0.04em" }}>
+                                    {p.tag}
+                                  </div>
+                                )}
+                                <div style={{ width: 36, height: 46, borderRadius: 8, background: `linear-gradient(140deg, ${p.g1}, ${p.g2})`, opacity: 0.55, boxShadow: `0 4px 16px ${p.g1}55` }} />
+                              </div>
+                              <div style={{ padding: "7px 8px 9px", background: "white" }}>
+                                <div style={{ fontSize: 9, fontWeight: 600, color: "#1a1a1a", fontFamily: bodyFont, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
+                                <div style={{ fontSize: 10, fontWeight: 800, color: "#7C3AED", fontFamily: bodyFont }}>{p.price}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Mini nav bar at bottom */}
+                        <div style={{ padding: "0 16px 14px", display: "flex", gap: 8 }}>
+                          {["Ana Sayfa", "Ürünler", "Hakkımda", "İletişim"].map((t, i) => (
+                            <div key={t} style={{ fontSize: 8, fontWeight: i === 0 ? 700 : 500, color: i === 0 ? "#7C3AED" : "#9CA3AF", fontFamily: bodyFont, paddingBottom: i === 0 ? 2 : 0, borderBottom: i === 0 ? "1.5px solid #7C3AED" : "none" }}>{t}</div>
+                          ))}
                         </div>
                       </div>
 
-                      {/* Front card */}
-                      <div style={{
-                        position: "absolute", inset: 0,
-                        transform: "rotate(-1.5deg) translate(-12px, 16px)",
-                        zIndex: 2, borderRadius: 20, overflow: "hidden",
-                        boxShadow: "0 28px 72px rgba(0,0,0,0.28)",
-                        background: "#1A0A2E",
-                      }}>
-                        <div className="flex items-center justify-between px-5 pt-5 pb-4">
-                          <div className="flex items-center gap-2">
-                            <div style={{ width: 20, height: 20, borderRadius: 6, background: "#E91E8C" }} />
-                            <div style={{ width: 80, height: 8, borderRadius: 4, background: "rgba(255,255,255,0.12)" }} />
-                          </div>
-                          <div style={{ padding: "3px 10px", borderRadius: 99, fontSize: 9, fontWeight: 700, color: "white", background: "#E91E8C", fontFamily: bodyFont }}>CANLIDA</div>
+                      {/* Floating badge: revenue */}
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.85 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }}
+                        transition={{ delay: 0.7, duration: 0.4 }}
+                        style={{
+                          position: "absolute", top: 52, left: -28, zIndex: 10,
+                          background: "linear-gradient(135deg,#7C3AED,#9333EA)",
+                          borderRadius: 16, padding: "11px 16px",
+                          boxShadow: "0 10px 32px rgba(124,58,237,0.38)",
+                        }}
+                      >
+                        <p style={{ fontSize: 8, fontWeight: 700, color: "rgba(255,255,255,0.65)", fontFamily: bodyFont, letterSpacing: "0.08em", margin: 0, textTransform: "uppercase" }}>Bu Ay Kazanç</p>
+                        <p style={{ fontSize: 22, fontWeight: 800, color: "white", fontFamily: bodyFont, lineHeight: 1.2, margin: "3px 0 0" }}>₺14.280</p>
+                        <p style={{ fontSize: 8, fontWeight: 600, color: "rgba(255,255,255,0.55)", fontFamily: bodyFont, margin: "3px 0 0" }}>▲ %32 geçen aya göre</p>
+                      </motion.div>
+
+                      {/* Floating badge: rating */}
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
+                        transition={{ delay: 0.9, duration: 0.4 }}
+                        style={{
+                          position: "absolute", top: 12, right: -18, zIndex: 10,
+                          background: "white", borderRadius: 14, padding: "9px 13px",
+                          boxShadow: "0 8px 28px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.05)",
+                          display: "flex", alignItems: "center", gap: 8,
+                        }}
+                      >
+                        <div style={{ width: 30, height: 30, borderRadius: 9, background: "linear-gradient(135deg,#fbbf24,#f59e0b)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>⭐</div>
+                        <div>
+                          <p style={{ fontSize: 12, fontWeight: 800, color: "#111", margin: 0, fontFamily: bodyFont }}>4.9 / 5</p>
+                          <p style={{ fontSize: 8, color: "#9CA3AF", margin: 0, fontFamily: bodyFont }}>142 değerlendirme</p>
                         </div>
-                        <div style={{ margin: "0 20px", borderRadius: 14, height: 215, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
-                          <div style={{ textAlign: "center", padding: "0 16px" }}>
-                            <div style={{ width: 48, height: 48, borderRadius: 12, margin: "0 auto 12px", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(233,30,140,0.15)" }}>
-                              <Sparkles style={{ width: 20, height: 20, color: "#E91E8C" }} />
-                            </div>
-                            <p style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.80)", fontFamily: bodyFont, marginBottom: 4 }}>Elif Butik</p>
-                            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.38)", fontFamily: bodyFont }}>El yapımı çanta & aksesuar</p>
-                          </div>
+                      </motion.div>
+
+                      {/* Floating toast: new order */}
+                      <motion.div
+                        initial={{ opacity: 0, x: 16 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
+                        transition={{ delay: 1.1, duration: 0.4 }}
+                        style={{
+                          position: "absolute", bottom: 58, right: -22, zIndex: 10,
+                          background: "white", borderRadius: 15, padding: "10px 14px",
+                          boxShadow: "0 10px 36px rgba(0,0,0,0.13), 0 0 0 1px rgba(0,0,0,0.05)",
+                          display: "flex", alignItems: "center", gap: 10, minWidth: 190,
+                        }}
+                      >
+                        <div style={{ width: 34, height: 34, borderRadius: 11, background: "linear-gradient(135deg,#22C55E,#16A34A)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 16 }}>🛍️</div>
+                        <div>
+                          <p style={{ fontSize: 10, fontWeight: 700, color: "#111", fontFamily: bodyFont, margin: 0 }}>Yeni sipariş!</p>
+                          <p style={{ fontSize: 9, color: "#6B7280", fontFamily: bodyFont, margin: "2px 0 0" }}>Deri Çanta · ₺890 · 2 dk önce</p>
                         </div>
-                        <div style={{ margin: "16px 20px 0" }}>
-                          <div style={{ height: 5, borderRadius: 99, background: "rgba(255,255,255,0.06)" }}>
-                            <div style={{ height: "100%", borderRadius: 99, background: "#E91E8C", width: "73%" }} />
-                          </div>
-                          <p style={{ fontSize: 10, marginTop: 6, color: "rgba(255,255,255,0.30)", fontFamily: bodyFont }}>73 sipariş bu ay</p>
-                        </div>
-                      </div>
+                      </motion.div>
                     </div>
 
                     {/* Stats badge */}
-                    <div className="mt-10">
+                    <div className="mt-8">
                       <p className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: c.textSubtle, fontFamily: bodyFont }}>#1 AI Vitrin Platformu</p>
                       <p className="text-sm" style={{ color: c.textMuted, fontFamily: bodyFont }}>
                         En hızlı, en güçlü AI vitrin oluşturucu.{" "}
