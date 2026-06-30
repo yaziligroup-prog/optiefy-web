@@ -8,7 +8,7 @@ import type { User } from "@supabase/supabase-js";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, ShoppingBag, Package, Users, Store, Settings,
-  Sparkles, Search, Bell, Sun, Moon, ChevronDown, Menu,
+  Search, Bell, Sun, Moon, ChevronDown, Menu,
   LogOut, User as UserIcon, CreditCard, ArrowUpRight,
 } from "lucide-react";
 import OptiefyIcon from "@/components/OptiefyIcon";
