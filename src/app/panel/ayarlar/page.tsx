@@ -418,6 +418,12 @@ function StoresSection({ c }: { c: PanelPalette }) {
         <div className="space-y-2.5">
           {visibleStores.map((store) => {
             const statusColor = STATUS_COLOR[store.status ?? "inactive"] ?? "#6B7280";
+            // Canlı vitrin köprüsü: custom_domain hem özel alan adlarını (vivinth.com)
+            // hem platform subdomain'lerini (magaza.optiefy.com) tutar — varsa doğrudan
+            // canlı site açılır; henüz domain bağlanmadıysa gerçek vitrin önizlemesi.
+            const storefrontUrl = store.custom_domain
+              ? `https://${store.custom_domain}`
+              : `/store/preview/${store.id}`;
             return (
               <div key={store.id} className="flex items-center gap-4 px-4 py-3.5 rounded-xl"
                 style={{ background: c.cardBgSoft, border: `1px solid ${c.borderSoft}` }}>
@@ -454,12 +460,12 @@ function StoresSection({ c }: { c: PanelPalette }) {
                   <Trash2 className="w-3.5 h-3.5" style={{ color: "#DC2626" }} />
                 </button>
                 <a
-                  href={`/panel/${store.id}`}
+                  href={storefrontUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
                   style={{ ...tr, background: c.hover, border: `1px solid ${c.border}` }}
-                  title="Mağazayı Görüntüle"
+                  title={store.custom_domain ? `Canlı vitrini aç: ${store.custom_domain}` : "Vitrin önizlemesini aç"}
                 >
                   <ExternalLink className="w-3.5 h-3.5" style={{ color: c.textMuted }} />
                 </a>

@@ -265,6 +265,11 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
 
   const [themeId, setThemeId] = useState<ThemeId>(defaultTheme);
 
+  // Onboarding önizlemesi — overrideTheme prop'u değişince tema anında (0 ms) uygulanır
+  useEffect(() => {
+    if (overrideTheme && THEMES[overrideTheme]) setThemeId(overrideTheme);
+  }, [overrideTheme]);
+
   // Hot-swap theme via postMessage from preview page iframe
   useEffect(() => {
     if (!previewMode) return;

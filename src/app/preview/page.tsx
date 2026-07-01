@@ -10,26 +10,27 @@ import OptiefyIcon from "@/components/OptiefyIcon";
 import { createClient } from "@/utils/supabase/client";
 import { THEMES, type ThemeId } from "@/types/theme";
 import type { Store } from "@/types/store";
+import StoreView from "@/app/store/[domain]/StoreView";
 
 // ─── PhoneFrame (module-scope) ────────────────────────────────────────────────
+// İçinde iframe değil, gerçek StoreView motoru çalışır: AI'ın oluşturduğu store
+// nesnesi doğrudan prop olarak beslenir. Sarmalayıcıdaki CSS transform hem 375px
+// mobil viewport'u çerçeveye sığdırır hem de StoreView'in fixed header/duyuru
+// barının tarayıcı yerine telefon kabuğuna sabitlenmesini sağlar.
+
+const PHONE_SCREEN_W = 290; // 310 kabuk − 2×10 çerçeve
+const PHONE_SCREEN_H = 558; // 640 − 20 çerçeve − 38 status bar − 24 home bar
+const PHONE_SCALE    = PHONE_SCREEN_W / 375;
 
 function PhoneFrame({
-  storeId,
+  store,
   activeTheme,
-  iframeRef,
-  iframeLoaded,
-  onIframeLoad,
   accentColor,
 }: {
-  storeId: string;
+  store: Store;
   activeTheme: ThemeId;
-  iframeRef: React.RefObject<HTMLIFrameElement | null> | null;
-  iframeLoaded: boolean;
-  onIframeLoad: () => void;
   accentColor: string;
 }) {
-  const iframeSrc = `/store/preview/${storeId}?theme=${activeTheme}`;
-
   return (
     <div className="relative" style={{ filter: "drop-shadow(0 40px 80px rgba(0,0,0,0.55))" }}>
       {/* Radial glow */}
@@ -92,37 +93,25 @@ function PhoneFrame({
           </div>
         </div>
 
-        {/* iframe area */}
+        {/* Canlı vitrin alanı — gerçek StoreView, 375px sanal viewport'ta */}
         <div
           className="relative overflow-hidden"
-          style={{ width: "100%", height: "calc(100% - 38px - 24px)" }}
+          style={{ width: "100%", height: "calc(100% - 38px - 24px)", background: "#FFFFFF" }}
         >
-          {/* Skeleton shimmer */}
-          {!iframeLoaded && (
-            <div className="absolute inset-0 z-10" style={{ background: "#F8F8F6" }}>
-              <div className="w-full h-full flex flex-col gap-3 p-4 animate-pulse">
-                <div className="h-40 rounded-xl" style={{ background: "#E8E8E4" }} />
-                <div className="h-4 rounded-full w-3/4" style={{ background: "#E8E8E4" }} />
-                <div className="h-3 rounded-full w-1/2" style={{ background: "#EDEDEA" }} />
-                <div className="h-3 rounded-full w-2/3" style={{ background: "#EDEDEA" }} />
-                <div className="h-10 rounded-xl mt-2" style={{ background: "#E0E0DB" }} />
-                <div className="flex gap-2 mt-1">
-                  <div className="flex-1 h-20 rounded-lg" style={{ background: "#E8E8E4" }} />
-                  <div className="flex-1 h-20 rounded-lg" style={{ background: "#E8E8E4" }} />
-                </div>
-              </div>
-            </div>
-          )}
-
-          <iframe
-            ref={iframeRef}
-            src={iframeSrc}
-            onLoad={onIframeLoad}
-            title="Mağaza önizlemesi"
-            className="w-full h-full border-0"
-            style={{ display: "block" }}
-            sandbox="allow-scripts allow-same-origin"
-          />
+          <div
+            className="overflow-y-auto overscroll-contain [&::-webkit-scrollbar]:hidden"
+            style={{
+              width:           375,
+              height:          PHONE_SCREEN_H / PHONE_SCALE,
+              transform:       `scale(${PHONE_SCALE})`,
+              transformOrigin: "top left",
+              scrollbarWidth:  "none",
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            {/* previewMode: linkler onboarding dışına kaçmaz, buton hissiyatı canlı kalır */}
+            <StoreView store={store} overrideTheme={activeTheme} previewMode />
+          </div>
         </div>
 
         {/* Home indicator */}
@@ -441,13 +430,9 @@ function PreviewContent() {
   const [activeTheme,   setActiveTheme]   = useState<ThemeId>("modern");
   const [billing,       setBilling]       = useState<Billing>("monthly");
   const [selectedPlan,  setSelectedPlan]  = useState<PlanId>("launch");
-  const [submitting,         setSubmitting]         = useState(false);
-  const [iframeLoaded,       setIframeLoaded]       = useState(false);
-  const [mobileIframeLoaded, setMobileIframeLoaded] = useState(false);
+  const [submitting,    setSubmitting]    = useState(false);
 
-  const saveTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const iframeRef       = useRef<HTMLIFrameElement>(null);
-  const mobileIframeRef = useRef<HTMLIFrameElement>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const displayFont = "var(--font-display), Georgia, 'Times New Roman', serif";
   const bodyFont    = "var(--font-body), system-ui, -apple-system, sans-serif";
@@ -482,12 +467,11 @@ function PreviewContent() {
     }, 800);
   }, [storeId, supabase]);
 
+  // Tema değişimi tamamen yerel React state — StoreView overrideTheme prop'u
+  // üzerinden 0 ms'de yeni iskelete bürünür; Supabase kaydı debounce'la arkada.
   const handleThemeChange = (themeId: ThemeId) => {
     setActiveTheme(themeId);
     saveThemeDebounced(themeId);
-    const msg = { type: "optiefy-preview-theme", theme: themeId };
-    iframeRef.current?.contentWindow?.postMessage(msg, window.location.origin);
-    mobileIframeRef.current?.contentWindow?.postMessage(msg, window.location.origin);
   };
 
   const handleGoToPanel = async () => {
@@ -672,18 +656,15 @@ function PreviewContent() {
                 <div className="flex items-center gap-1.5">
                   <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
                   <span className="text-[9px] font-semibold text-green-400" style={{ fontFamily: bodyFont }}>
-                    {mobileIframeLoaded ? "Yüklendi" : "Yükleniyor…"}
+                    Canlı
                   </span>
                 </div>
               </div>
               <div style={{ overflow: "hidden", position: "relative", height: 410 }}>
                 <div style={{ display: "flex", justifyContent: "center", transform: "scale(0.62)", transformOrigin: "top center" }}>
                   <PhoneFrame
-                    storeId={storeId!}
+                    store={store}
                     activeTheme={activeTheme}
-                    iframeRef={mobileIframeRef}
-                    iframeLoaded={mobileIframeLoaded}
-                    onIframeLoad={() => setMobileIframeLoaded(true)}
                     accentColor={THEMES[activeTheme].accentColor}
                   />
                 </div>
@@ -827,7 +808,7 @@ function PreviewContent() {
           </div>
         </div>
 
-        {/* ════ RIGHT PANEL — Real iframe phone mockup ══════════════════════ */}
+        {/* ════ RIGHT PANEL — Canlı StoreView telefon mockup'ı ══════════════ */}
         <div
           className="hidden lg:flex flex-1 lg:ml-[460px] items-center justify-center py-12"
           style={{
@@ -837,17 +818,8 @@ function PreviewContent() {
           }}
         >
           <PhoneFrame
-            storeId={storeId!}
+            store={store}
             activeTheme={activeTheme}
-            iframeRef={iframeRef}
-            iframeLoaded={iframeLoaded}
-            onIframeLoad={() => {
-              setIframeLoaded(true);
-              iframeRef.current?.contentWindow?.postMessage(
-                { type: "optiefy-preview-theme", theme: activeTheme },
-                window.location.origin,
-              );
-            }}
             accentColor={THEMES[activeTheme].accentColor}
           />
         </div>
