@@ -72,9 +72,12 @@ function LoginContent() {
   const storeName = searchParams.get("storeName") ?? "";
   const fromBuilder = searchParams.get("from") === "builder";
   const errorParam = searchParams.get("error");
+  const tabParam = searchParams.get("tab");
 
   const [isDark, setIsDark]     = useState(false);
-  const [tab, setTab]           = useState<"login" | "register">("login");
+  const [tab, setTab]           = useState<"login" | "register">(
+    tabParam === "register" ? "register" : "login"
+  );
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [confirmPw, setConfirmPw] = useState("");

@@ -984,9 +984,10 @@ export default function Home() {
                 </nav>
               )}
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                {/* Dark mode toggle */}
                 <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} onClick={toggleDark}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
                   style={{ ...tr, background: isDark ? "rgba(255,255,255,0.06)" : "#F0F0EE", border: `1px solid ${c.border}` }}>
                   <AnimatePresence mode="wait">
                     <motion.div key={isDark ? "sun" : "moon"} initial={{ rotate: -20, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 20, opacity: 0 }} transition={{ duration: 0.18 }}>
@@ -997,39 +998,40 @@ export default function Home() {
 
                 {appState === "landing" ? (
                   user ? (
+                    /* Giriş yapılmış: tek "Panele Git" butonu */
+                    <Link href="/panel">
+                      <motion.span
+                        whileHover={{ opacity: 0.82 }} whileTap={{ scale: 0.97 }}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 sm:px-4 rounded-lg text-xs sm:text-sm font-semibold"
+                        style={{ background: c.ctaBg, color: c.ctaText, fontFamily: bodyFont, ...tr }}
+                      >
+                        Panele Git <ArrowRight className="w-3.5 h-3.5" />
+                      </motion.span>
+                    </Link>
+                  ) : (
+                    /* Giriş yapılmamış: Giriş Yap (ghost) + Ücretsiz Başla (CTA) */
                     <>
                       <Link
-                        href="/panel"
-                        className="hidden sm:block text-sm px-3 py-1.5 rounded-lg hover:opacity-70 transition-opacity font-medium"
-                        style={{ color: c.textMuted, fontFamily: displayFont, ...tr }}
+                        href="/login"
+                        className="text-xs sm:text-sm px-2.5 py-1.5 sm:px-3 rounded-lg hover:opacity-60 transition-opacity font-medium whitespace-nowrap"
+                        style={{ color: c.textMuted, fontFamily: bodyFont, ...tr }}
                       >
-                        Yönetim Paneli
-                      </Link>
-                      <motion.button
-                        whileHover={{ opacity: 0.75 }} whileTap={{ scale: 0.97 }}
-                        onClick={async () => { await supabase.auth.signOut(); setUser(null); }}
-                        className="text-sm px-4 py-2 rounded-lg"
-                        style={{ color: c.textMuted, border: `1px solid ${c.border}`, fontFamily: bodyFont, ...tr }}
-                      >
-                        Çıkış Yap
-                      </motion.button>
-                    </>
-                  ) : (
-                    <>
-                      <Link href="/login" className="hidden sm:block text-sm px-3 py-1.5 hover:opacity-60 transition-opacity" style={{ color: c.textMuted, fontFamily: bodyFont }}>
                         Giriş Yap
                       </Link>
-                      <motion.button whileHover={{ opacity: 0.82 }} whileTap={{ scale: 0.97 }}
-                        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold"
-                        style={{ background: c.ctaBg, color: c.ctaText, fontFamily: bodyFont, ...tr }}>
-                        Ücretsiz Başla
-                      </motion.button>
+                      <Link href="/login?tab=register">
+                        <motion.span
+                          whileHover={{ opacity: 0.82 }} whileTap={{ scale: 0.97 }}
+                          className="inline-flex items-center gap-1 sm:gap-1.5 px-3 py-2 sm:px-4 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap"
+                          style={{ background: c.ctaBg, color: c.ctaText, fontFamily: bodyFont, ...tr }}
+                        >
+                          <span className="hidden xs:inline">Ücretsiz</span> Başla
+                        </motion.span>
+                      </Link>
                     </>
                   )
                 ) : (
                   <motion.button whileHover={{ opacity: 0.7 }} whileTap={{ scale: 0.97 }} onClick={handleReset}
-                    className="text-sm px-4 py-2 rounded-lg"
+                    className="text-sm px-4 py-2 rounded-lg whitespace-nowrap"
                     style={{ color: c.textMuted, border: `1px solid ${c.border}`, fontFamily: bodyFont, ...tr }}>
                     ← Yeni Vitrin
                   </motion.button>
