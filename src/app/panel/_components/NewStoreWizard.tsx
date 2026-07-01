@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   X, ArrowRight, ArrowLeft, Sparkles, Check, Wand2, Store as StoreIcon,
   Palette, ImageIcon, FileText, LayoutTemplate, ScanEye, PartyPopper, AlertTriangle,
+  Globe, Link2, ShoppingCart,
 } from "lucide-react";
 import UploadZone from "@/components/UploadZone";
 import { PANEL_BODY_FONT, PANEL_DISPLAY_FONT } from "../_lib/theme";
@@ -46,7 +47,7 @@ type WizardData = {
   currency:     "TRY" | "USD";
   subdomain:    string;
   ownDomain:    string;
-  domainMode:   "free" | "own";
+  domainMode:   "free" | "own" | "buy";
 };
 
 const EMPTY: WizardData = {
@@ -347,21 +348,48 @@ export default function NewStoreWizard({ open, onClose, onCreated }: Props) {
 
                     {step === 3 && (
                       <motion.div key="s3" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.2 }}>
-                        <div className="flex gap-1 mb-4 p-1 rounded-xl" style={{ background: "rgba(255,255,255,0.05)" }}>
-                          {(["free", "own"] as const).map((mode) => (
-                            <button key={mode} onClick={() => patch({ domainMode: mode })}
-                              className="flex-1 py-2 rounded-lg text-xs font-semibold transition-all"
-                              style={{
-                                background: data.domainMode === mode ? "rgba(255,255,255,0.10)" : "transparent",
-                                color: data.domainMode === mode ? "#F5F5F4" : "#6B7280", fontFamily: PANEL_BODY_FONT,
-                              }}>
-                              {mode === "free" ? "Ücretsiz Adres" : "Kendi Domainim"}
-                            </button>
-                          ))}
+                        {/* Üç domain seçenek kartı */}
+                        <div className="grid grid-cols-3 gap-2 mb-4">
+                          {([
+                            { mode: "free" as const, icon: Globe,       label: "Optiefy\nSubdomain",  sub: "Ücretsiz · Hemen Hazır", badge: null },
+                            { mode: "own"  as const, icon: Link2,       label: "Kendi\nDomainin",     sub: "DNS ile bağla",           badge: null },
+                            { mode: "buy"  as const, icon: ShoppingCart,label: "Domain\nSatın Al",    sub: "Yakında Aktif",           badge: "Yakında" },
+                          ]).map(({ mode, icon: Icon, label, sub, badge }) => {
+                            const sel = data.domainMode === mode;
+                            const disabled = mode === "buy";
+                            return (
+                              <button key={mode}
+                                onClick={() => !disabled && patch({ domainMode: mode })}
+                                disabled={disabled}
+                                className="flex flex-col items-center gap-1.5 p-3 rounded-xl text-center relative transition-all"
+                                style={{
+                                  background: sel ? "rgba(168,85,247,0.15)" : "rgba(255,255,255,0.04)",
+                                  border: sel ? "1.5px solid rgba(168,85,247,0.5)" : "1.5px solid rgba(255,255,255,0.08)",
+                                  opacity: disabled ? 0.5 : 1,
+                                  cursor: disabled ? "not-allowed" : "pointer",
+                                }}>
+                                {badge && (
+                                  <span className="absolute -top-1.5 -right-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                                    style={{ background: "rgba(251,191,36,0.15)", color: "#FBBF24", border: "1px solid rgba(251,191,36,0.3)" }}>
+                                    {badge}
+                                  </span>
+                                )}
+                                <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                  style={{ background: sel ? "rgba(168,85,247,0.2)" : "rgba(255,255,255,0.06)" }}>
+                                  <Icon className="w-4 h-4" style={{ color: sel ? "#C084FC" : "#6B7280" }} />
+                                </div>
+                                <p className="text-[11px] font-semibold whitespace-pre-line leading-tight"
+                                  style={{ color: sel ? "#F5F5F4" : "#9CA3AF", fontFamily: PANEL_BODY_FONT }}>
+                                  {label}
+                                </p>
+                                <p className="text-[9px]" style={{ color: "#6B7280", fontFamily: PANEL_BODY_FONT }}>{sub}</p>
+                              </button>
+                            );
+                          })}
                         </div>
 
                         <AnimatePresence mode="wait">
-                          {data.domainMode === "free" ? (
+                          {data.domainMode === "free" && (
                             <motion.div key="free" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                               <div className="flex items-stretch rounded-xl overflow-hidden" style={{ border: "1.5px solid rgba(255,255,255,0.12)" }}>
                                 <input
@@ -376,8 +404,12 @@ export default function NewStoreWizard({ open, onClose, onCreated }: Props) {
                                   .optiefy.com
                                 </div>
                               </div>
+                              <p className="text-xs mt-2" style={{ color: "#6B7280", fontFamily: PANEL_BODY_FONT }}>
+                                İsteğe bağlı — boş bırakırsanız otomatik bir adres atanır
+                              </p>
                             </motion.div>
-                          ) : (
+                          )}
+                          {data.domainMode === "own" && (
                             <motion.div key="own" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                               <input
                                 autoFocus type="text" placeholder="magazam.com"
@@ -390,10 +422,18 @@ export default function NewStoreWizard({ open, onClose, onCreated }: Props) {
                               </p>
                             </motion.div>
                           )}
+                          {data.domainMode === "buy" && (
+                            <motion.div key="buy" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                              <div className="flex items-center gap-3 p-4 rounded-xl"
+                                style={{ background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.2)" }}>
+                                <ShoppingCart className="w-5 h-5 flex-shrink-0" style={{ color: "#FBBF24" }} />
+                                <p className="text-xs leading-relaxed" style={{ color: "#9CA3AF", fontFamily: PANEL_BODY_FONT }}>
+                                  Domain satın alma entegrasyonu yakında aktif olacak. Şimdilik ücretsiz adres veya kendi domaininizi seçin.
+                                </p>
+                              </div>
+                            </motion.div>
+                          )}
                         </AnimatePresence>
-                        <p className="text-xs mt-3" style={{ color: "#6B7280", fontFamily: PANEL_BODY_FONT }}>
-                          İsteğe bağlı — boş bırakırsanız otomatik bir adres atanır
-                        </p>
                       </motion.div>
                     )}
                   </AnimatePresence>

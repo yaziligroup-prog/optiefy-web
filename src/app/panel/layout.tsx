@@ -10,14 +10,15 @@ import {
   LayoutDashboard, ShoppingBag, Package, Users, Store, Settings,
   Search, Bell, Sun, Moon, ChevronDown, Menu,
   LogOut, User as UserIcon, CreditCard, ArrowUpRight,
-  Check, Globe, Plus,
+  Check, Globe, Plus, Zap, Lock, X as XIcon,
 } from "lucide-react";
 import OptiefyIcon from "@/components/OptiefyIcon";
 import {
-  PanelThemeProvider, usePanelTheme, PANEL_BODY_FONT,
+  PanelThemeProvider, usePanelTheme, PANEL_BODY_FONT, PANEL_DISPLAY_FONT,
 } from "./_lib/theme";
 import { StoreProvider, useActiveStore } from "./_lib/storeContext";
 import { THEMES, type ThemeId } from "@/types/theme";
+import NewStoreWizard from "./_components/NewStoreWizard";
 
 // ─── Navigation ──────────────────────────────────────────────────────────────
 
@@ -34,6 +35,169 @@ const DASHBOARD_ROUTES: string[] = NAV.map((n) => n.href);
 
 const spring = { type: "spring" as const, stiffness: 420, damping: 36 };
 
+// ─── Plan kapısı — kaç ücretsiz mağaza hakkı var ────────────────────────────
+// PayTR entegrasyonu hazır olduğunda bu sabit plan verisinden okunacak.
+const FREE_STORE_LIMIT = 1; // Ücretsiz planda 1 mağaza; fazlası için upgrade gerekli
+
+// ─── UpgradeGate modal ───────────────────────────────────────────────────────
+
+function UpgradeGate({ open, onClose, storeCount }: { open: boolean; onClose: () => void; storeCount: number }) {
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const PLANS = [
+    {
+      id: "starter",
+      name: "Starter",
+      price: "₺199 / ay",
+      stores: 3,
+      features: ["3 mağazaya kadar", "AI vitrin üretici", "Özel domain", "Kargo entegrasyonu"],
+      cta: "Starter'a Geç",
+      accent: "#6366F1",
+      popular: false,
+    },
+    {
+      id: "growth",
+      name: "Growth",
+      price: "₺399 / ay",
+      stores: 10,
+      features: ["10 mağazaya kadar", "Öncelikli AI işlemi", "Pazaryeri entegrasyonu", "Gelişmiş analitik"],
+      cta: "Growth'a Geç",
+      accent: "#7C3AED",
+      popular: true,
+    },
+    {
+      id: "pro",
+      name: "Pro",
+      price: "₺799 / ay",
+      stores: -1,
+      features: ["Sınırsız mağaza", "Beyaz etiket", "API erişimi", "Öncelikli destek"],
+      cta: "Pro'ya Geç",
+      accent: "#EC4899",
+      popular: false,
+    },
+  ];
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[110] flex items-center justify-center p-4"
+        style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ opacity: 0, y: 28, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 28, scale: 0.96 }}
+          transition={{ type: "spring", stiffness: 320, damping: 30 }}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-2xl rounded-3xl overflow-hidden relative"
+          style={{
+            background: "linear-gradient(165deg, #12111A 0%, #0C0B13 100%)",
+            border: "1px solid rgba(124,58,237,0.2)",
+            boxShadow: "0 40px 100px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03)",
+          }}
+        >
+          {/* Dekoratif ışıma */}
+          <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-80 h-40 pointer-events-none"
+            style={{ background: "radial-gradient(ellipse, rgba(124,58,237,0.22) 0%, transparent 70%)" }} />
+
+          {/* Kapatma */}
+          <button onClick={onClose}
+            className="absolute top-5 right-5 w-8 h-8 rounded-lg flex items-center justify-center z-10"
+            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <XIcon className="w-4 h-4" style={{ color: "#9CA3AF" }} />
+          </button>
+
+          {/* Header */}
+          <div className="px-7 pt-8 pb-6 text-center relative">
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
+              style={{ background: "linear-gradient(135deg,#7C3AED,#EC4899)", boxShadow: "0 8px 32px rgba(124,58,237,0.4)" }}>
+              <Lock className="w-6 h-6 text-white" />
+            </div>
+            <h2 style={{ fontFamily: PANEL_DISPLAY_FONT, fontSize: "1.7rem", fontWeight: 400, color: "#F5F5F4", marginBottom: 8 }}>
+              Yeni mağaza hakkı gerekli
+            </h2>
+            <p className="text-sm max-w-sm mx-auto leading-relaxed" style={{ color: "#9CA3AF", fontFamily: PANEL_BODY_FONT }}>
+              Şu an <span className="font-semibold" style={{ color: "#C084FC" }}>{storeCount} mağaza</span> ile ücretsiz planınızı kullanıyorsunuz.
+              İkinci mağazanızı açmak için planınızı yükseltin.
+            </p>
+          </div>
+
+          {/* Plan kartları */}
+          <div className="px-5 pb-7 grid grid-cols-3 gap-3">
+            {PLANS.map((plan) => (
+              <div key={plan.id}
+                className="rounded-2xl p-4 relative flex flex-col"
+                style={{
+                  background: plan.popular ? `${plan.accent}12` : "rgba(255,255,255,0.04)",
+                  border: plan.popular ? `1.5px solid ${plan.accent}50` : "1px solid rgba(255,255,255,0.08)",
+                }}>
+                {plan.popular && (
+                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-bold px-3 py-1 rounded-full whitespace-nowrap"
+                    style={{ background: plan.accent, color: "white", boxShadow: `0 4px 12px ${plan.accent}50` }}>
+                    En Popüler
+                  </span>
+                )}
+
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: `${plan.accent}20` }}>
+                    <Zap className="w-3.5 h-3.5" style={{ color: plan.accent }} />
+                  </div>
+                  <p className="text-sm font-bold" style={{ color: "#F5F5F4", fontFamily: PANEL_BODY_FONT }}>{plan.name}</p>
+                </div>
+
+                <p className="text-lg font-bold mb-3" style={{ color: plan.accent, fontFamily: PANEL_BODY_FONT }}>{plan.price}</p>
+
+                <ul className="space-y-1.5 mb-4 flex-1">
+                  {plan.features.map((f) => (
+                    <li key={f} className="flex items-start gap-1.5 text-[11px]" style={{ color: "#9CA3AF", fontFamily: PANEL_BODY_FONT }}>
+                      <Check className="w-3 h-3 flex-shrink-0 mt-0.5" style={{ color: plan.accent }} />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+
+                <button
+                  className="w-full py-2.5 rounded-xl text-xs font-bold transition-all"
+                  style={{
+                    background: plan.popular ? plan.accent : "rgba(255,255,255,0.06)",
+                    color: plan.popular ? "white" : "#9CA3AF",
+                    border: plan.popular ? "none" : "1px solid rgba(255,255,255,0.1)",
+                    opacity: 0.7, cursor: "not-allowed",
+                  }}
+                  title="Ödeme sistemi yakında aktif olacak"
+                >
+                  {plan.cta}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Alt not */}
+          <div className="px-7 pb-6 text-center">
+            <p className="text-xs" style={{ color: "#6B7280", fontFamily: PANEL_BODY_FONT }}>
+              Ödeme sistemi yakında aktif olacak · Şimdilik sihirbazı test edebilirsiniz
+            </p>
+            <button onClick={onClose}
+              className="mt-3 text-xs font-semibold underline underline-offset-2"
+              style={{ color: "#A855F7", fontFamily: PANEL_BODY_FONT }}>
+              Yine de devam et (test modu)
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
 // ─── Bildirim verileri ───────────────────────────────────────────────────────
 
 const MOCK_NOTIFS = [
@@ -44,7 +208,7 @@ const MOCK_NOTIFS = [
 
 // ─── Store Selector ──────────────────────────────────────────────────────────
 
-function StoreSelector() {
+function StoreSelector({ onNewStore }: { onNewStore: () => void }) {
   const { c, isDark } = usePanelTheme();
   const { stores, activeStore, setActiveStoreId, loading } = useActiveStore();
   const [open, setOpen] = useState(false);
@@ -141,11 +305,12 @@ function StoreSelector() {
               </div>
 
               <div className="px-3 py-2.5" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
-                <Link href="/panel/urunler" onClick={() => setOpen(false)}
-                  className="flex items-center gap-2 text-[11px] font-semibold w-full py-1.5 rounded-lg px-2"
-                  style={{ color: "#7C3AED", fontFamily: PANEL_BODY_FONT, background: isDark ? "rgba(124,58,237,0.08)" : "#F5F0FF" }}>
+                <button
+                  onClick={() => { setOpen(false); onNewStore(); }}
+                  className="flex items-center gap-2 text-[11px] font-semibold w-full py-2 rounded-lg px-2.5 transition-all"
+                  style={{ color: "#7C3AED", fontFamily: PANEL_BODY_FONT, background: isDark ? "rgba(124,58,237,0.08)" : "#F5F0FF", border: `1px solid ${isDark ? "rgba(124,58,237,0.18)" : "rgba(124,58,237,0.15)"}` }}>
                   <Plus className="w-3.5 h-3.5" /> Yeni Mağaza Ekle
-                </Link>
+                </button>
               </div>
             </motion.div>
           </>
@@ -161,10 +326,29 @@ function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router   = useRouter();
   const { c, isDark, toggle } = usePanelTheme();
-  const [mobileOpen,  setMobileOpen]  = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [notifOpen,   setNotifOpen]   = useState(false);
-  const [user,        setUser]        = useState<User | null>(null);
+  const { stores, refreshStores } = useActiveStore();
+  const [mobileOpen,    setMobileOpen]    = useState(false);
+  const [profileOpen,   setProfileOpen]   = useState(false);
+  const [notifOpen,     setNotifOpen]     = useState(false);
+  const [wizardOpen,    setWizardOpen]    = useState(false);
+  const [upgradeOpen,   setUpgradeOpen]   = useState(false);
+  const [user,          setUser]          = useState<User | null>(null);
+
+  // Feature-gate: yeni mağaza açma hakkı kontrolü
+  const handleNewStoreRequest = () => {
+    if (stores.length >= FREE_STORE_LIMIT) {
+      setUpgradeOpen(true);
+    } else {
+      setWizardOpen(true);
+    }
+  };
+
+  const handleWizardCreated = async (storeId: string) => {
+    await refreshStores(true);
+    // Yeni oluşturulan mağazayı aktif seç
+    try { localStorage.setItem("sv-active-store", storeId); } catch { /* ignore */ }
+    void storeId; // kullanıldığını işaretle
+  };
 
   useEffect(() => {
     const supabase = createClient();
@@ -201,7 +385,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 
       {/* ── Mağaza Seçici ── */}
       <div style={{ borderBottom: `1px solid ${c.borderSoft}` }}>
-        <StoreSelector />
+        <StoreSelector onNewStore={handleNewStoreRequest} />
       </div>
 
       {/* Nav */}
@@ -413,6 +597,20 @@ function Shell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+
+      {/* ── AI Vitrin Sihirbazı — yeni mağaza modal ── */}
+      <NewStoreWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        onCreated={(id) => { handleWizardCreated(id); setWizardOpen(false); }}
+      />
+
+      {/* ── Upgrade Gate — plan yükseltme kapısı ── */}
+      <UpgradeGate
+        open={upgradeOpen}
+        onClose={() => setUpgradeOpen(false)}
+        storeCount={stores.length}
+      />
     </div>
   );
 }
