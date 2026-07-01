@@ -12,6 +12,13 @@ export type Product = {
   status?: string | null; // 'active' | 'pending'
 };
 
+// Canlı Tema Editörü'nün yayınladığı özelleştirmeler (stores.theme_settings jsonb)
+export type StoreThemeSettings = {
+  announcement_text?: string | null;
+  primary_color?:     string | null; // hex, örn: "#7C3AED"
+  button_radius?:     number | null; // px
+};
+
 export type Store = {
   id: string;
   created_at: string;
@@ -26,6 +33,7 @@ export type Store = {
   image_urls: string[] | null;
   custom_domain: string | null;
   theme: string | null;
+  theme_settings?: StoreThemeSettings | null;
   currency: string | null;
   user_id: string | null;
   shipping_fee?: number | null;

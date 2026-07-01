@@ -38,7 +38,18 @@ function admin() {
 }
 
 const SELECT_COLS =
-  "id, created_at, store_name, product_price, currency, selected_plan, status, seo_title, description, features, image_urls, custom_domain, theme";
+  "id, created_at, store_name, product_price, currency, selected_plan, status, seo_title, description, features, image_urls, custom_domain, theme, theme_settings";
+
+// theme_settings jsonb — yalnızca bilinen anahtarlar yazılır (Canlı Tema Editörü payload'ı)
+function sanitizeThemeSettings(raw: unknown): Record<string, unknown> | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const src = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  if (typeof src.announcement_text === "string") out.announcement_text = src.announcement_text.slice(0, 200);
+  if (typeof src.primary_color === "string" && /^#[0-9A-Fa-f]{3,8}$/.test(src.primary_color)) out.primary_color = src.primary_color;
+  if (typeof src.button_radius === "number" && Number.isFinite(src.button_radius)) out.button_radius = Math.min(Math.max(Math.round(src.button_radius), 0), 40);
+  return out;
+}
 
 // ── GET ───────────────────────────────────────────────────────────────────────
 export async function GET() {
@@ -96,8 +107,14 @@ export async function PATCH(req: NextRequest) {
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   // Yalnızca belirli alanlar güncellenir
-  const allowed = ["seo_title", "product_price", "currency", "description", "features", "status", "theme", "store_name", "shipping_fee", "free_shipping_threshold"];
+  const allowed = ["seo_title", "product_price", "currency", "description", "features", "status", "theme", "store_name", "shipping_fee", "free_shipping_threshold", "theme_settings"];
   const safe = Object.fromEntries(Object.entries(patch).filter(([k]) => allowed.includes(k)));
+
+  if ("theme_settings" in safe) {
+    const clean = sanitizeThemeSettings(safe.theme_settings);
+    if (clean === null) delete safe.theme_settings;
+    else safe.theme_settings = clean;
+  }
 
   const { error } = await admin()
     .from("stores")

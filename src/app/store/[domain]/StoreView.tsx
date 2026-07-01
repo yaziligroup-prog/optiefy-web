@@ -8,7 +8,7 @@ import {
   Instagram, Twitter, Facebook,
 } from "lucide-react";
 import { THEMES, type ThemeId, type ThemeConfig } from "@/types/theme";
-import type { Store } from "@/types/store";
+import type { Store, StoreThemeSettings } from "@/types/store";
 import { CartProvider, useCart } from "@/lib/cart";
 import CartDrawer from "@/components/store/CartDrawer";
 import CheckoutModal from "@/components/store/CheckoutModal";
@@ -30,6 +30,48 @@ function getLayout(id: ThemeId): LayoutVariant {
   if (id === "luxury") return "luxury";
   if (id === "artisan") return "artisan";
   return "tech";
+}
+
+// ─── theme_settings override (Canlı Tema Editörü yayınları) ───────────────────────
+// stores.theme_settings jsonb'daki özelleştirmeler baz temanın üzerine giydirilir.
+
+function contrastText(hex: string): string {
+  const m = hex.replace("#", "");
+  const full = m.length === 3 ? m.split("").map((ch) => ch + ch).join("") : m.slice(0, 6);
+  const r = parseInt(full.slice(0, 2), 16) || 0;
+  const g = parseInt(full.slice(2, 4), 16) || 0;
+  const b = parseInt(full.slice(4, 6), 16) || 0;
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? "#111111" : "#FFFFFF";
+}
+
+function withAlpha(hex: string, alphaHex: string): string {
+  const m = hex.replace("#", "");
+  const full = m.length === 3 ? m.split("").map((ch) => ch + ch).join("") : m.slice(0, 6);
+  return `#${full}${alphaHex}`;
+}
+
+function applyThemeSettings(base: ThemeConfig, ts: StoreThemeSettings | null): ThemeConfig {
+  if (!ts) return base;
+  const merged: ThemeConfig = { ...base };
+  if (ts.primary_color) {
+    const p = ts.primary_color;
+    merged.accentColor      = p;
+    merged.accentGlow       = withAlpha(p, "2E"); // ~%18 opaklık
+    merged.dotColor         = p;
+    merged.ringColor        = p;
+    merged.featureIconColor = p;
+    merged.storeTagColor    = p;
+    merged.ghostBorder      = p;
+    merged.ghostText        = p;
+    merged.ghostHoverBg     = withAlpha(p, "14"); // ~%8 opaklık
+    merged.ghostHoverText   = p;
+    merged.solidBtn         = p;
+    merged.solidBtnText     = contrastText(p);
+    merged.secondaryBtn     = p;
+    merged.bannerBg         = p;
+  }
+  if (ts.button_radius != null) merged.btnRadius = `${ts.button_radius}px`;
+  return merged;
 }
 
 // ─── Static editorial content ─────────────────────────────────────────────────────
@@ -202,8 +244,15 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
     }).catch(() => {});
   };
 
-  const t      = THEMES[themeId];
+  const ts     = store.theme_settings ?? null;
+  const t      = applyThemeSettings(THEMES[themeId], ts);
   const layout = getLayout(themeId);
+
+  // Duyuru barı — theme_settings.announcement_text doluysa vitrinin en üstünde gösterilir
+  const announcement  = ts?.announcement_text?.trim() ?? "";
+  const announceH     = announcement ? 36 : 0;
+  const announceBg    = ts?.primary_color ?? t.bannerBg;
+  const announceColor = ts?.primary_color ? contrastText(ts.primary_color) : "#FFFFFF";
 
   const { addItem, openDrawer, openCheckout, count } = useCart();
 
@@ -314,10 +363,23 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
         freeShippingThreshold={store.free_shipping_threshold ?? null}
       />
 
+      {/* ════ DUYURU BARI — theme_settings.announcement_text ════ */}
+      {announcement && (
+        <div
+          className="fixed top-0 left-0 right-0 z-40 flex items-center justify-center px-4"
+          style={{ height: announceH, background: announceBg, color: announceColor }}
+        >
+          <p className="text-[11px] md:text-xs font-semibold tracking-wide truncate">
+            {announcement}
+          </p>
+        </div>
+      )}
+
       {/* ════ HEADER — fixed, scroll-aware ════ */}
       <header
-        className="fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-6 md:px-12 transition-all duration-500"
+        className="fixed left-0 right-0 z-40 flex items-center justify-between px-6 md:px-12 transition-all duration-500"
         style={{
+          top:                 announceH,
           height:              scrolled ? 64 : 84,
           background:          scrolled ? `${t.headerBg}f2` : "transparent",
           backdropFilter:      scrolled ? "blur(20px)" : "none",

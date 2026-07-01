@@ -10,7 +10,7 @@ import {
   LayoutDashboard, ShoppingBag, Package, Users, Store, Settings,
   Search, Bell, Sun, Moon, ChevronDown, Menu,
   LogOut, User as UserIcon, CreditCard, ArrowUpRight,
-  Check, Globe, Plus, Lock, X as XIcon,
+  Check, Globe, Plus, Lock, X as XIcon, Palette,
 } from "lucide-react";
 import OptiefyIcon from "@/components/OptiefyIcon";
 import {
@@ -28,6 +28,7 @@ const NAV = [
   { href: "/panel/urunler",    label: "Ürün Kataloğu",    icon: Package },
   { href: "/panel/musteriler", label: "Müşteriler",       icon: Users },
   { href: "/panel/pazaryeri",  label: "Pazaryeri",        icon: Store },
+  { href: "/panel/tasarim",    label: "Tasarım",          icon: Palette },
   { href: "/panel/ayarlar",    label: "Ayarlar",          icon: Settings },
 ] as const;
 
