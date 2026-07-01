@@ -7,8 +7,7 @@ import {
   ResponsiveContainer, CartesianGrid, Cell,
 } from "recharts";
 import {
-  Users, TrendingUp, Radio, ShoppingBag, ArrowUpRight, ArrowDownRight,
-  TrendingDown,
+  Users, TrendingUp, Radio, ShoppingBag, ArrowUpRight, ArrowDownRight, TrendingDown,
 } from "lucide-react";
 import type { OrderWithItems } from "@/types/order";
 import { PANEL_BODY_FONT, type PanelPalette } from "../_lib/theme";
@@ -18,9 +17,7 @@ function seededVisitors(d: Date): number {
   const day = d.getDay();
   const dow = day === 0 || day === 6 ? 1.32 : day === 5 ? 1.18 : 1;
   const seed = d.getFullYear() * 1000 + (d.getMonth() + 1) * 50 + d.getDate();
-  const rand = Math.abs(Math.sin(seed));
-  const base = 150 + Math.round(rand * 130);
-  return Math.round(base * dow);
+  return Math.round((150 + Math.round(Math.abs(Math.sin(seed)) * 130)) * dow);
 }
 
 export type RealAnalytics = {
@@ -28,7 +25,7 @@ export type RealAnalytics = {
   days:          { key: string; views: number; visitors: number }[];
   totalViews:    number;
   totalVisitors: number;
-  liveVisitors:  number;
+  // liveVisitors artık burada YOK — LiveTrafficCard kendi poll'unu yapar
   funnel: {
     views:     number;
     addToCart: number;
@@ -48,10 +45,9 @@ function buildSeries(
   fromDate?: string,
   toDate?: string,
 ): DayPoint[] {
-  const useReal  = !!real?.hasData;
+  const useReal   = !!real?.hasData;
   const realByKey = new Map((real?.days ?? []).map((d) => [d.key, d.views]));
   const days: DayPoint[] = [];
-
   const until = toDate   ? new Date(toDate).getTime()   : Date.now();
   const start = fromDate ? new Date(fromDate).getTime() : until - 14 * 86_400_000;
   const rangeDays = Math.max(1, Math.ceil((until - start) / 86_400_000));
@@ -68,7 +64,6 @@ function buildSeries(
       visitors: useReal ? (realByKey.get(key) ?? 0) : seededVisitors(d),
     });
   }
-
   const idx = new Map(days.map((p, i) => [p.key, i]));
   for (const o of orders) {
     if (o.status === "cancelled") continue;
@@ -84,7 +79,7 @@ function buildSeries(
 const fmtNum = (n: number) => n.toLocaleString("tr-TR");
 const fmtTRY = (n: number) => n.toLocaleString("tr-TR", { maximumFractionDigits: 0 }) + " ₺";
 
-// ─── Premium metrik kartı ────────────────────────────────────────────────────────
+// ─── Metrik kartı ────────────────────────────────────────────────────────────────
 function MetricCard({
   label, value, trend, trendUp, icon: Icon, color, index, c, live,
 }: {
@@ -107,7 +102,8 @@ function MetricCard({
         {live ? (
           <span className="flex items-center gap-1.5 px-2 py-1 rounded-full"
             style={{ background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)" }}>
-            <motion.span animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }} transition={{ duration: 1.6, repeat: Infinity }}
+            <motion.span animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }}
+              transition={{ duration: 1.6, repeat: Infinity }}
               className="w-1.5 h-1.5 rounded-full" style={{ background: "#22C55E" }} />
             <span className="text-[10px] font-bold" style={{ color: "#16A34A" }}>CANLI</span>
           </span>
@@ -125,14 +121,63 @@ function MetricCard({
   );
 }
 
-// ─── Özel tooltip ────────────────────────────────────────────────────────────────
+// ─── İzole Canlı Trafik Kartı ─────────────────────────────────────────────────
+// Bu bileşen kendi 30sn poll döngüsünü yönetir.
+// Ana grafikleri re-render ETMez — sadece bu kart güncellenir.
+function LiveTrafficCard({
+  index, c, isReal, liveBase,
+}: {
+  index: number; c: PanelPalette; isReal: boolean; liveBase: number;
+}) {
+  const [count, setCount] = useState<number>(liveBase);
+
+  useEffect(() => {
+    let alive = true;
+    if (isReal) {
+      // Gerçek mod: hafif endpoint'i poll et
+      const poll = async () => {
+        try {
+          const res = await fetch("/api/analytics?liveOnly=true", { cache: "no-store" });
+          if (res.ok && alive) {
+            const d = await res.json();
+            setCount(d.liveVisitors ?? 0);
+          }
+        } catch { /* sessiz */ }
+      };
+      poll();
+      const id = setInterval(poll, 30_000);
+      return () => { alive = false; clearInterval(id); };
+    } else {
+      // Simülasyon modu: yerel dalgalanma (30sn değil 3.2sn — sadece bu kart)
+      const id = setInterval(() => {
+        if (alive) setCount(Math.max(1, liveBase + Math.round((Math.random() - 0.5) * 4)));
+      }, 3200);
+      return () => { alive = false; clearInterval(id); };
+    }
+  }, [isReal, liveBase]);
+
+  return (
+    <MetricCard
+      index={index}
+      c={c}
+      label="Canlı Trafik"
+      value={`${count} kişi`}
+      live
+      icon={Radio}
+      color="#EC4899"
+    />
+  );
+}
+
+// ─── Tooltip ─────────────────────────────────────────────────────────────────────
 interface TipEntry { name?: string; value?: number | string; color?: string; }
 function ChartTooltip({ active, payload, label, c, suffix }: {
   active?: boolean; payload?: TipEntry[]; label?: string; c: PanelPalette; suffix?: string;
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl px-3 py-2" style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadowMd }}>
+    <div className="rounded-xl px-3 py-2"
+      style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadowMd }}>
       <p className="text-[11px] font-semibold mb-1" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>{label}</p>
       {payload.map((p, i) => (
         <p key={i} className="text-sm font-bold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
@@ -145,31 +190,26 @@ function ChartTooltip({ active, payload, label, c, suffix }: {
 
 // ─── Dönüşüm Hunisi ──────────────────────────────────────────────────────────────
 const FUNNEL_STEPS = [
-  { key: "views",      label: "Oturumlar",             sub: "Sayfa görüntüleme",    color: "#7C3AED" },
-  { key: "addToCart",  label: "Sepete Ekleme",          sub: "Ürün sepete eklendi",  color: "#2563EB" },
-  { key: "checkout",   label: "Ödeme Adımı",            sub: "Ödemeye yönlendirildi", color: "#0891B2" },
-  { key: "purchases",  label: "Tamamlanan Alışveriş",   sub: "Sipariş oluşturuldu",  color: "#059669" },
+  { key: "views",     label: "Oturumlar",           sub: "Sayfa görüntüleme",     color: "#7C3AED" },
+  { key: "addToCart", label: "Sepete Ekleme",        sub: "Ürün sepete eklendi",   color: "#2563EB" },
+  { key: "checkout",  label: "Ödeme Adımı",          sub: "Ödemeye yönlendirildi", color: "#0891B2" },
+  { key: "purchases", label: "Tamamlanan Alışveriş", sub: "Sipariş oluşturuldu",   color: "#059669" },
 ] as const;
 
 type FunnelData = { views: number; addToCart: number; checkout: number; purchases: number };
 
 function ConversionFunnel({ funnel, isReal, c }: { funnel: FunnelData; isReal: boolean; c: PanelPalette }) {
   const max = Math.max(1, funnel.views);
-  const values: Record<string, number> = {
-    views:     funnel.views,
-    addToCart: funnel.addToCart,
-    checkout:  funnel.checkout,
-    purchases: funnel.purchases,
+  const vals: Record<string, number> = {
+    views: funnel.views, addToCart: funnel.addToCart,
+    checkout: funnel.checkout, purchases: funnel.purchases,
   };
-
   const pct = (n: number, d: number) => d > 0 ? ((n / d) * 100).toFixed(1) : "—";
-
   const transitions = [
-    { label: `%${pct(funnel.addToCart, funnel.views)} sepete ekledi` },
-    { label: `%${pct(funnel.checkout, funnel.addToCart)} ödemeye geçti` },
-    { label: `%${pct(funnel.purchases, funnel.checkout)} satın tamamladı` },
+    `%${pct(funnel.addToCart, funnel.views)} sepete ekledi`,
+    `%${pct(funnel.checkout, funnel.addToCart)} ödemeye geçti`,
+    `%${pct(funnel.purchases, funnel.checkout)} satın tamamladı`,
   ];
-
   const noData = !isReal && funnel.views === 0;
 
   return (
@@ -194,7 +234,8 @@ function ConversionFunnel({ funnel, isReal, c }: { funnel: FunnelData; isReal: b
         </span>
       </div>
       <p className="text-xs mb-6" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-        Ziyaretçiden müşteriye dönüşüm akışı · {isReal ? "Seçili dönem" : "İlk satış etkinliğinde gerçek veriye geçer"}
+        {isReal ? "Seçili dönemde ziyaretçiden müşteriye dönüşüm akışı"
+          : "İlk satış etkinliğinde gerçek veriye geçer"}
       </p>
 
       {noData ? (
@@ -205,23 +246,18 @@ function ConversionFunnel({ funnel, isReal, c }: { funnel: FunnelData; isReal: b
           </div>
           <p className="text-sm font-medium" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Henüz etkinlik verisi yok</p>
           <p className="text-xs text-center max-w-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-            Vitrininizdeki &quot;Sepete Ekle&quot; ve ödeme butonlarına tıklamalar burada görünecek.
+            Vitrininizdeki &ldquo;Sepete Ekle&rdquo; ve ödeme butonlarına tıklamalar burada görünecek.
           </p>
         </div>
       ) : (
         <div className="space-y-1.5">
           {FUNNEL_STEPS.map((step, i) => {
-            const val = values[step.key] ?? 0;
+            const val    = vals[step.key] ?? 0;
             const barPct = Math.max(0, Math.min(100, (val / max) * 100));
             const isLast = i === FUNNEL_STEPS.length - 1;
-            const nextVal = i < FUNNEL_STEPS.length - 1 ? (values[FUNNEL_STEPS[i + 1].key] ?? 0) : null;
-            const dropPct = nextVal !== null && val > 0 ? (((val - nextVal) / val) * 100).toFixed(1) : null;
-
             return (
               <div key={step.key}>
-                {/* Step row */}
                 <div className="flex items-center gap-4 py-3">
-                  {/* Step info */}
                   <div style={{ minWidth: 160 }}>
                     <p className="text-sm font-semibold leading-tight" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
                       {step.label}
@@ -231,25 +267,27 @@ function ConversionFunnel({ funnel, isReal, c }: { funnel: FunnelData; isReal: b
                     </p>
                   </div>
 
-                  {/* Bar */}
-                  <div className="flex-1 relative h-8 rounded-lg overflow-hidden"
-                    style={{ background: c.hover }}>
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${barPct}%` }}
-                      transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: i * 0.1 }}
+                  {/* Bar — CSS transition, framer-motion yok (smooth data swap) */}
+                  <div className="flex-1 relative h-8 rounded-lg overflow-hidden" style={{ background: c.hover }}>
+                    <div
                       className="absolute inset-y-0 left-0 rounded-lg"
-                      style={{ background: `linear-gradient(90deg, ${step.color}cc, ${step.color})` }}
+                      style={{
+                        width: `${barPct}%`,
+                        background: `linear-gradient(90deg, ${step.color}cc, ${step.color})`,
+                        transition: "width 0.55s cubic-bezier(0.16, 1, 0.3, 1)",
+                      }}
                     />
                     <div className="absolute inset-0 flex items-center px-3">
                       <span className="text-xs font-bold relative z-10"
-                        style={{ color: barPct > 30 ? "rgba(255,255,255,0.92)" : c.text, fontFamily: PANEL_BODY_FONT }}>
+                        style={{
+                          color: barPct > 30 ? "rgba(255,255,255,0.92)" : c.text,
+                          fontFamily: PANEL_BODY_FONT,
+                        }}>
                         {fmtNum(val)}
                       </span>
                     </div>
                   </div>
 
-                  {/* Percentage of top */}
                   <div style={{ minWidth: 52, textAlign: "right" }}>
                     <span className="text-sm font-bold" style={{ color: step.color, fontFamily: PANEL_BODY_FONT }}>
                       {i === 0 ? "100%" : `%${pct(val, funnel.views)}`}
@@ -257,23 +295,15 @@ function ConversionFunnel({ funnel, isReal, c }: { funnel: FunnelData; isReal: b
                   </div>
                 </div>
 
-                {/* Arrow between steps */}
                 {!isLast && (
                   <div className="flex items-center gap-4 pb-1">
                     <div style={{ minWidth: 160 }} />
                     <div className="flex-1 flex items-center gap-2">
                       <div className="h-px flex-1" style={{ background: c.borderSoft }} />
-                      {dropPct !== null && (
-                        <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full flex-shrink-0"
-                          style={{
-                            background: `${transitions[i] ? "#DC262610" : c.hover}`,
-                            color: c.textMuted,
-                            border: `1px solid ${c.borderSoft}`,
-                            fontFamily: PANEL_BODY_FONT,
-                          }}>
-                          {transitions[i]?.label ?? ""}
-                        </span>
-                      )}
+                      <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full flex-shrink-0"
+                        style={{ background: c.hover, color: c.textMuted, border: `1px solid ${c.borderSoft}`, fontFamily: PANEL_BODY_FONT }}>
+                        {transitions[i]}
+                      </span>
                       <div className="h-px flex-1" style={{ background: c.borderSoft }} />
                     </div>
                     <div style={{ minWidth: 52 }} />
@@ -299,6 +329,7 @@ export default function AnalyticsCharts({
   toDate?: string;
 }) {
   const isReal = !!analytics?.hasData;
+
   const series = useMemo(
     () => buildSeries(orders, analytics, fromDate, toDate),
     [orders, analytics, fromDate, toDate],
@@ -317,37 +348,29 @@ export default function AnalyticsCharts({
     return { totalVisitors, totalOrders, totalRevenue, conversion, visTrend };
   }, [series, isReal, analytics]);
 
-  // Simüle canlı trafik dalgalanması
+  // Simülasyon modunda liveBase'i LiveTrafficCard'a geçir
   const liveBase = Math.max(3, Math.round((series[series.length - 1]?.visitors ?? 0) / 42));
-  const [simLive, setSimLive] = useState(liveBase);
-  useEffect(() => {
-    if (isReal) return;
-    const id = setInterval(() => {
-      setSimLive(() => Math.max(1, liveBase + Math.round((Math.random() - 0.5) * 4)));
-    }, 3200);
-    return () => clearInterval(id);
-  }, [liveBase, isReal]);
-  const live = isReal ? (analytics?.liveVisitors ?? 0) : simLive;
 
-  // Dönüşüm hunisi verisi
-  const funnel = useMemo<{ views: number; addToCart: number; checkout: number; purchases: number }>(() => {
+  // Funnel
+  const funnel = useMemo<FunnelData>(() => {
     if (isReal && analytics?.funnel) return analytics.funnel;
-    // Simüle huni
     const v  = totals.totalVisitors;
-    const ac = Math.round(v * 0.14);
-    const co = Math.round(ac * 0.45);
-    const pu = totals.totalOrders;
-    return { views: v, addToCart: ac, checkout: co, purchases: pu };
+    return {
+      views: v,
+      addToCart: Math.round(v * 0.14),
+      checkout:  Math.round(v * 0.14 * 0.45),
+      purchases: totals.totalOrders,
+    };
   }, [isReal, analytics, totals]);
 
-  const axisStyle    = { fontSize: 11, fontFamily: PANEL_BODY_FONT, fill: c.textSubtle };
-  const maxOrders    = Math.max(1, ...series.map((p) => p.orders));
+  const axisStyle     = { fontSize: 11, fontFamily: PANEL_BODY_FONT, fill: c.textSubtle };
+  const maxOrders     = Math.max(1, ...series.map((p) => p.orders));
   const trafficSuffix = isReal ? " görüntüleme" : " ziyaretçi";
-  const xInterval    = series.length <= 7 ? 0 : series.length <= 14 ? 2 : 4;
+  const xInterval     = series.length <= 7 ? 0 : series.length <= 14 ? 2 : 4;
 
   return (
     <div className="space-y-5">
-      {/* Metrik kartları */}
+      {/* Metrik kartları — LiveTrafficCard izole, diğerleri analytics prop'tan */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard index={0} c={c} label="Toplam Ziyaretçi" value={fmtNum(totals.totalVisitors)}
           trend={`%${Math.abs(totals.visTrend).toFixed(1)}`} trendUp={totals.visTrend >= 0}
@@ -355,15 +378,14 @@ export default function AnalyticsCharts({
         <MetricCard index={1} c={c} label="Dönüşüm Oranı" value={`%${totals.conversion.toFixed(1)}`}
           trend={totals.totalOrders > 0 ? "aktif" : undefined} trendUp
           icon={TrendingUp} color="#22C55E" />
-        <MetricCard index={2} c={c} label="Canlı Trafik" value={`${live} kişi`}
-          live icon={Radio} color="#EC4899" />
+        {/* İzole canlı trafik kartı — sadece bu yenilenir */}
+        <LiveTrafficCard index={2} c={c} isReal={isReal} liveBase={liveBase} />
         <MetricCard index={3} c={c} label="Sipariş Geçmişi" value={fmtNum(totals.totalOrders)}
           trend={`${series.length} gün`} trendUp icon={ShoppingBag} color="#2563EB" />
       </div>
 
-      {/* Grafikler */}
+      {/* Grafikler — isAnimationActive={false}: veri güncellemesinde flash yok */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        {/* Ziyaretçi trafiği — area chart */}
         <motion.div
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}
           className="xl:col-span-2 rounded-2xl p-5"
@@ -379,7 +401,8 @@ export default function AnalyticsCharts({
             </span>
           </div>
           <p className="text-xs mb-5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-            {isReal ? "Vitrinlerinize gelen günlük sayfa görüntülemeleri" : "Örnek trafik verisi · ilk ziyaretlerle gerçek veriye döner"}
+            {isReal ? "Vitrinlerinize gelen günlük sayfa görüntülemeleri"
+              : "Örnek trafik verisi · ilk ziyaretlerle gerçek veriye döner"}
           </p>
           <div style={{ width: "100%", height: 240 }}>
             <ResponsiveContainer>
@@ -394,14 +417,20 @@ export default function AnalyticsCharts({
                 <XAxis dataKey="short" tick={axisStyle} axisLine={false} tickLine={false} interval={xInterval} />
                 <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={44} allowDecimals={false} />
                 <Tooltip content={<ChartTooltip c={c} suffix={trafficSuffix} />} cursor={{ stroke: c.border }} />
-                <Area type="monotone" dataKey="visitors" stroke="#7C3AED" strokeWidth={2.5}
-                  fill="url(#visGrad)" activeDot={{ r: 5, fill: "#7C3AED", stroke: c.cardBg, strokeWidth: 2 }} />
+                <Area
+                  type="monotone"
+                  dataKey="visitors"
+                  stroke="#7C3AED"
+                  strokeWidth={2.5}
+                  fill="url(#visGrad)"
+                  isAnimationActive={false}
+                  activeDot={{ r: 5, fill: "#7C3AED", stroke: c.cardBg, strokeWidth: 2 }}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </motion.div>
 
-        {/* Günlük sipariş — bar chart */}
         <motion.div
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.34 }}
           className="rounded-2xl p-5"
@@ -420,7 +449,7 @@ export default function AnalyticsCharts({
                 <XAxis dataKey="short" tick={axisStyle} axisLine={false} tickLine={false} interval={xInterval} />
                 <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
                 <Tooltip content={<ChartTooltip c={c} suffix=" sipariş" />} cursor={{ fill: c.hover }} />
-                <Bar dataKey="orders" radius={[4, 4, 0, 0]} maxBarSize={22}>
+                <Bar dataKey="orders" radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}>
                   {series.map((p, i) => (
                     <Cell key={i} fill={p.orders >= maxOrders && maxOrders > 0 ? "#EC4899" : "#7C3AED"} />
                   ))}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -463,27 +463,28 @@ function StatCard({
 
 export default function DashboardPage() {
   const { c, isDark } = usePanelTheme();
-  const [orders,    setOrders]    = useState<OrderWithItems[]>([]);
-  const [loading,   setLoading]   = useState(true);
-  const [aLoading,  setALoading]  = useState(true);
-  const [today,     setToday]     = useState("");
-  const [analytics, setAnalytics] = useState<RealAnalytics | null>(null);
+  const [orders,       setOrders]      = useState<OrderWithItems[]>([]);
+  const [loading,      setLoading]     = useState(true);
+  const [aLoading,     setALoading]    = useState(true);   // yalnızca ilk yükleme
+  const [isRefreshing, setRefreshing]  = useState(false);  // tarih değişimi — hafif gösterge
+  const [today,        setToday]       = useState("");
+  const [analytics,    setAnalytics]   = useState<RealAnalytics | null>(null);
+  // İlk yükleme tamamlandı mı? — sonrasında skeleton göstermez
+  const analyticsReady = useRef(false);
 
   // Tarih seçici state
-  const [period,      setPeriod]      = useState<PeriodKey>("14d");
-  const [customFrom,  setCustomFrom]  = useState("");
-  const [customTo,    setCustomTo]    = useState("");
+  const [period,       setPeriod]      = useState<PeriodKey>("14d");
+  const [customFrom,   setCustomFrom]  = useState("");
+  const [customTo,     setCustomTo]    = useState("");
   const [appliedRange, setAppliedRange] = useState<{ from: string; to: string }>(
     () => getPeriodDates("14d"),
   );
 
-  // Preset seçilince hemen uygula
   const handleSelectPeriod = useCallback((p: PeriodKey) => {
     setPeriod(p);
     if (p !== "custom") setAppliedRange(getPeriodDates(p));
   }, []);
 
-  // Özel aralık "Uygula" butonu
   const applyCustom = useCallback(() => {
     if (period === "custom" && customFrom && customTo) {
       setAppliedRange(getPeriodDates("custom", customFrom, customTo));
@@ -504,15 +505,25 @@ export default function DashboardPage() {
     setLoading(false);
   }, []);
 
+  // İlk yüklemede skeleton, sonraki güncellemelerde stale-while-revalidate
   const fetchAnalytics = useCallback(async (from: string, to: string) => {
-    setALoading(true);
+    if (!analyticsReady.current) {
+      setALoading(true);
+    } else {
+      setRefreshing(true);
+    }
     try {
       const qs  = new URLSearchParams({ from, to });
       const res = await fetch(`/api/analytics?${qs}`, { cache: "no-store" });
-      if (!res.ok) { setAnalytics(null); return; }
+      if (!res.ok) { if (!analyticsReady.current) setAnalytics(null); return; }
       setAnalytics((await res.json()) as RealAnalytics);
-    } catch { setAnalytics(null); }
-    finally { setALoading(false); }
+      analyticsReady.current = true;
+    } catch {
+      if (!analyticsReady.current) setAnalytics(null);
+    } finally {
+      setALoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -520,11 +531,9 @@ export default function DashboardPage() {
     fetchOrders();
   }, [fetchOrders]);
 
-  // appliedRange değişince analitiği çek + 30sn otomatik yenile
+  // Tarih aralığı değişince çek — 30sn interval YOK (LiveTrafficCard kendi poll'unu yapar)
   useEffect(() => {
     fetchAnalytics(appliedRange.from, appliedRange.to);
-    const id = setInterval(() => fetchAnalytics(appliedRange.from, appliedRange.to), 30_000);
-    return () => clearInterval(id);
   }, [fetchAnalytics, appliedRange]);
 
   // ── İstatistikler ──
@@ -595,6 +604,20 @@ export default function DashboardPage() {
               style={{ background: c.hover, color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
               {periodLabel}
             </span>
+            {/* Hafif yenileme göstergesi — charts KAPATILMAZ */}
+            <AnimatePresence>
+              {isRefreshing && (
+                <motion.div
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+                    <RefreshCw className="w-3 h-3" style={{ color: c.textSubtle }} />
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           <DateRangePicker
@@ -609,7 +632,8 @@ export default function DashboardPage() {
           />
         </div>
 
-        {aLoading ? (
+        {aLoading && !analyticsReady.current ? (
+          /* İlk yüklemede skeleton — yalnızca bir kez */
           <div className="space-y-5">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[0,1,2,3].map((i) => (
@@ -623,6 +647,7 @@ export default function DashboardPage() {
             <div className="h-64 rounded-2xl animate-pulse" style={{ background: c.hover }} />
           </div>
         ) : (
+          /* Tarih değişimi / yenilemede charts canlı kalır — stale-while-revalidate */
           <AnalyticsCharts
             orders={orders}
             c={c}
