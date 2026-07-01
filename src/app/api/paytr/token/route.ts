@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateIframeToken, PAYTR_ENABLED } from "@/lib/paytr";
-import { getPaymentClient, finalizeSuccessfulOrder } from "@/lib/order-fulfillment";
+import { getPaymentClient, finalizeSuccessfulOrder, type PreloadedOrder } from "@/lib/order-fulfillment";
 
 // Service role varsa onu, yoksa anon client (RLS: anon insert izinli)
 const db = getPaymentClient();
@@ -55,7 +55,14 @@ export async function POST(req: NextRequest) {
       .eq("id", storeId)
       .single();
 
-    // ── 2. Siparişi "pending" olarak oluştur ────────────────────────────────────
+    // ── 2. Siparişi oluştur ──────────────────────────────────────────────────────
+    // Mock modda (PAYTR_ENABLED=false) nihai durumu ("preparing"/"paid") doğrudan
+    // insert anında yazıyoruz. Önceden "pending" yazıp ardından ayrı bir UPDATE ile
+    // düzeltmeye çalışmak, anon (oturumsuz) checkout akışında orders UPDATE RLS'i
+    // "authenticated" gerektirdiği için sessizce hiçbir satırı etkilemeden
+    // başarısız olabiliyordu — sipariş kalıcı olarak "pending" ile panelde
+    // "Bekliyor" durumunda takılı kalıyordu. INSERT ise anon için açık, bu yüzden
+    // nihai değerleri en baştan doğru yazmak güvenilir.
     const { data: order, error: orderErr } = await db
       .from("orders")
       .insert({
@@ -72,10 +79,10 @@ export async function POST(req: NextRequest) {
         total,
         total_desi:       totalDesi,
         is_oversized:     isOversized,
-        status:           "pending",
-        payment_status:   "pending",
+        status:           PAYTR_ENABLED ? "pending" : "preparing",
+        payment_status:   PAYTR_ENABLED ? "pending" : "paid",
       })
-      .select("id, order_number")
+      .select("id, order_number, customer_name, customer_email, customer_phone, shipping_address, city, subtotal, shipping_cost, total, store_id, status")
       .single();
 
     if (orderErr || !order) {
@@ -100,17 +107,19 @@ export async function POST(req: NextRequest) {
       order_id:     order.id,
       merchant_oid: orderNumber,
       amount_kurus: Math.round(total * 100),
-      status:       "pending",
+      status:       PAYTR_ENABLED ? "pending" : "success",
       currency:     store?.currency === "USD" ? "USD" : "TL",
     });
 
     // ── 5. Mock mod (PayTR yapılandırılmamışsa) ──────────────────────────────────
-    // Gerçek ödeme olmadan tüm akışı test edebilmek için siparişi başarılı say:
-    // durumu "preparing"e çek + onay/bildirim e-postalarını gönder.
+    // Sipariş zaten "preparing"/"paid" olarak yazıldı — burada sadece onay/bildirim
+    // e-postalarını gönderiyoruz (preloadedOrder + skipUpdate: tekrar UPDATE denenmez).
     if (!PAYTR_ENABLED) {
       await finalizeSuccessfulOrder(db, order.id as string, {
-        paymentType: "mock",
-        rawCallback: { mock: true },
+        paymentType:    "mock",
+        rawCallback:    { mock: true },
+        preloadedOrder: order as PreloadedOrder,
+        skipUpdate:     true,
       });
       return NextResponse.json({
         mock:        true,

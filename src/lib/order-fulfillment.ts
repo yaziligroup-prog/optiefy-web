@@ -14,45 +14,80 @@ export function getPaymentClient(): SupabaseClient {
   );
 }
 
+export type PreloadedOrder = {
+  id: string;
+  order_number: string;
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string;
+  shipping_address: string;
+  city: string;
+  subtotal: number;
+  shipping_cost: number;
+  total: number;
+  store_id: string;
+  status: string;
+};
+
 // Başarılı ödeme sonrası siparişi tamamlar:
 //  1. orders → preparing / paid
 //  2. payment_transactions → success
 //  3. Müşteri onay + satıcı bildirim e-postaları
 // Hem mock modda (token route) hem de gerçek PayTR callback'inde kullanılır.
+//
+// preloadedOrder: mock modda, sipariş zaten insert edilirken elde ettiğimiz
+// satırı doğrudan geçebiliriz. Bu, anon client + eksik RLS SELECT izni
+// (service role henüz tanımlı değilse) durumunda burada yapılacak ayrı bir
+// SELECT'in sessizce boş dönüp durumu hiç güncellemeden fonksiyonun no-op
+// olmasını engeller — store_id/payment_status paneldeki sorguyla eşleşmeye
+// devam eder.
 export async function finalizeSuccessfulOrder(
   client: SupabaseClient,
   orderId: string,
-  opts?: { paymentType?: string | null; installmentCount?: number; rawCallback?: Record<string, unknown> }
+  opts?: {
+    paymentType?: string | null;
+    installmentCount?: number;
+    rawCallback?: Record<string, unknown>;
+    preloadedOrder?: PreloadedOrder;
+    // Mock modda sipariş zaten "preparing"/"paid" olarak insert edildiği için
+    // burada tekrar bir UPDATE denenmez (anon client'ta orders UPDATE RLS'i
+    // "authenticated" gerektirir ve sessizce 0 satır etkiler — store_id ve
+    // payment_status panelin beklediğiyle uyuşmadan kalırdı). Sadece e-posta
+    // adımı çalışır.
+    skipUpdate?: boolean;
+  }
 ): Promise<void> {
   // ── 1. Siparişi getir ──────────────────────────────────────────────────────
-  const { data: order } = await client
+  const order = opts?.preloadedOrder ?? (await client
     .from("orders")
     .select("id, order_number, customer_name, customer_email, customer_phone, shipping_address, city, subtotal, shipping_cost, total, store_id, status")
     .eq("id", orderId)
-    .single();
+    .single()).data;
 
   if (!order) return;
 
-  // Tekrar işlemeyi engelle
-  if (order.status !== "pending") return;
+  if (!opts?.skipUpdate) {
+    // Tekrar işlemeyi engelle
+    if (order.status !== "pending") return;
 
-  // ── 2. Sipariş durumunu güncelle ───────────────────────────────────────────
-  await client
-    .from("orders")
-    .update({ status: "preparing", payment_status: "paid" })
-    .eq("id", order.id);
+    // ── 2. Sipariş durumunu güncelle ───────────────────────────────────────────
+    await client
+      .from("orders")
+      .update({ status: "preparing", payment_status: "paid" })
+      .eq("id", order.id);
 
-  // ── 3. Payment transaction güncelle ────────────────────────────────────────
-  await client
-    .from("payment_transactions")
-    .update({
-      status:            "success",
-      payment_type:      opts?.paymentType ?? null,
-      installment_count: opts?.installmentCount ?? 0,
-      raw_callback:      opts?.rawCallback ?? null,
-      updated_at:        new Date().toISOString(),
-    })
-    .eq("order_id", order.id);
+    // ── 3. Payment transaction güncelle ────────────────────────────────────────
+    await client
+      .from("payment_transactions")
+      .update({
+        status:            "success",
+        payment_type:      opts?.paymentType ?? null,
+        installment_count: opts?.installmentCount ?? 0,
+        raw_callback:      opts?.rawCallback ?? null,
+        updated_at:        new Date().toISOString(),
+      })
+      .eq("order_id", order.id);
+  }
 
   // ── 4. Sipariş kalemleri + mağaza ──────────────────────────────────────────
   const { data: orderItems } = await client
