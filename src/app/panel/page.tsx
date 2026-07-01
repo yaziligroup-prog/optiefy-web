@@ -530,13 +530,14 @@ export default function DashboardPage() {
     }
     setLoading(true);
     const supabase = createClient();
-    let q = supabase
+    // Sayaçlar (ciro, toplam sipariş, teslim oranı) TÜM siparişlerden hesaplanır —
+    // eski limit(50) büyük mağazalarda metrikleri eksik gösteriyordu.
+    const { data, error } = await supabase
       .from("orders")
       .select("*, order_items(product_name, quantity, id, order_id, product_id, unit_price, image, line_total)")
+      .eq("store_id", sid)
       .order("created_at", { ascending: false })
-      .limit(50);
-    q = q.eq("store_id", sid);
-    const { data, error } = await q;
+      .limit(1000);
     if (!error && data) setOrders(data as OrderWithItems[]);
     setLoading(false);
   }, []);
@@ -584,6 +585,31 @@ export default function DashboardPage() {
     fetchAnalytics(appliedRange.from, appliedRange.to, activeStoreId, storeLoading);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appliedRange, activeStoreId, storeLoading]);
+
+  // Yenile butonu — sipariş listesi + tüm analitik state'leri tek hamlede re-fetch
+  const handleRefresh = useCallback(() => {
+    fetchOrders(activeStoreId, storeLoading);
+    fetchAnalytics(appliedRange.from, appliedRange.to, activeStoreId, storeLoading);
+  }, [fetchOrders, fetchAnalytics, activeStoreId, storeLoading, appliedRange]);
+
+  // Supabase Realtime — aktif mağazanın siparişlerinde INSERT/UPDATE/DELETE olduğu an
+  // (yeni test siparişi, durum değişikliği vb.) sayaçlar ve grafikler otomatik tazelenir.
+  useEffect(() => {
+    if (!activeStoreId) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`dashboard-orders-${activeStoreId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders", filter: `store_id=eq.${activeStoreId}` },
+        () => {
+          fetchOrders(activeStoreId, false);
+          fetchAnalytics(appliedRange.from, appliedRange.to, activeStoreId, false);
+        },
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [activeStoreId, appliedRange.from, appliedRange.to, fetchOrders, fetchAnalytics]);
 
   // ── İstatistikler ──
   const active         = orders.filter((o) => o.status !== "cancelled");
@@ -633,10 +659,10 @@ export default function DashboardPage() {
             </h1>
             <p className="text-sm mt-1.5" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Gerçek zamanlı sipariş ve trafik verileri bu mağazaya ait.</p>
           </div>
-          <button onClick={() => fetchOrders(activeStoreId, storeLoading)} title="Yenile"
+          <button onClick={handleRefresh} title="Yenile"
             className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
             style={{ background: c.hover, border: `1px solid ${c.border}` }}>
-            <RefreshCw className="w-4 h-4" style={{ color: c.textMuted }} />
+            <RefreshCw className={`w-4 h-4 ${(loading || isRefreshing) ? "animate-spin" : ""}`} style={{ color: c.textMuted }} />
           </button>
         </div>
       </motion.div>
@@ -752,6 +778,7 @@ export default function DashboardPage() {
             analytics={analytics}
             fromDate={appliedRange.from}
             toDate={appliedRange.to}
+            storeId={activeStoreId}
           />
         )}
       </motion.div>

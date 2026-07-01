@@ -12,14 +12,6 @@ import {
 import type { OrderWithItems } from "@/types/order";
 import { PANEL_BODY_FONT, type PanelPalette } from "../_lib/theme";
 
-// ─── Deterministik simüle ziyaretçi ────────────────────────────────────────────
-function seededVisitors(d: Date): number {
-  const day = d.getDay();
-  const dow = day === 0 || day === 6 ? 1.32 : day === 5 ? 1.18 : 1;
-  const seed = d.getFullYear() * 1000 + (d.getMonth() + 1) * 50 + d.getDate();
-  return Math.round((150 + Math.round(Math.abs(Math.sin(seed)) * 130)) * dow);
-}
-
 export type RealAnalytics = {
   hasData:       boolean;
   days:          { key: string; views: number; visitors: number }[];
@@ -45,7 +37,8 @@ function buildSeries(
   fromDate?: string,
   toDate?: string,
 ): DayPoint[] {
-  const useReal   = !!real?.hasData;
+  // Ziyaretçi serisi HER ZAMAN gerçek page_views verisinden gelir —
+  // veri olmayan günler sahte simülasyon yerine gerçek sıfır olarak çizilir.
   const realByKey = new Map((real?.days ?? []).map((d) => [d.key, d.views]));
   const days: DayPoint[] = [];
   const until = toDate   ? new Date(toDate).getTime()   : Date.now();
@@ -61,7 +54,7 @@ function buildSeries(
       label: d.toLocaleDateString("tr-TR", { day: "numeric", month: "long" }),
       short: d.toLocaleDateString("tr-TR", { day: "numeric", month: "short" }),
       orders: 0, revenue: 0,
-      visitors: useReal ? (realByKey.get(key) ?? 0) : seededVisitors(d),
+      visitors: realByKey.get(key) ?? 0,
     });
   }
   const idx = new Map(days.map((p, i) => [p.key, i]));
@@ -125,36 +118,30 @@ function MetricCard({
 // Bu bileşen kendi 30sn poll döngüsünü yönetir.
 // Ana grafikleri re-render ETMez — sadece bu kart güncellenir.
 function LiveTrafficCard({
-  index, c, isReal, liveBase,
+  index, c, storeId,
 }: {
-  index: number; c: PanelPalette; isReal: boolean; liveBase: number;
+  index: number; c: PanelPalette; storeId?: string | null;
 }) {
-  const [count, setCount] = useState<number>(liveBase);
+  const [count, setCount] = useState<number>(0);
 
+  // Her zaman gerçek veri: son 5 dk'nın benzersiz IP sayısı, mağaza filtresiyle
+  // 30 sn'de bir poll edilir (simülasyon modu kaldırıldı).
   useEffect(() => {
     let alive = true;
-    if (isReal) {
-      // Gerçek mod: hafif endpoint'i poll et
-      const poll = async () => {
-        try {
-          const res = await fetch("/api/analytics?liveOnly=true", { cache: "no-store" });
-          if (res.ok && alive) {
-            const d = await res.json();
-            setCount(d.liveVisitors ?? 0);
-          }
-        } catch { /* sessiz */ }
-      };
-      poll();
-      const id = setInterval(poll, 30_000);
-      return () => { alive = false; clearInterval(id); };
-    } else {
-      // Simülasyon modu: yerel dalgalanma (30sn değil 3.2sn — sadece bu kart)
-      const id = setInterval(() => {
-        if (alive) setCount(Math.max(1, liveBase + Math.round((Math.random() - 0.5) * 4)));
-      }, 3200);
-      return () => { alive = false; clearInterval(id); };
-    }
-  }, [isReal, liveBase]);
+    const poll = async () => {
+      try {
+        const qs  = storeId ? `&storeId=${encodeURIComponent(storeId)}` : "";
+        const res = await fetch(`/api/analytics?liveOnly=true${qs}`, { cache: "no-store" });
+        if (res.ok && alive) {
+          const d = await res.json();
+          setCount(d.liveVisitors ?? 0);
+        }
+      } catch { /* sessiz */ }
+    };
+    poll();
+    const id = setInterval(poll, 30_000);
+    return () => { alive = false; clearInterval(id); };
+  }, [storeId]);
 
   return (
     <MetricCard
@@ -316,13 +303,14 @@ function ConversionFunnel({ funnel, isReal, c }: { funnel: FunnelData; isReal: b
 
 // ─── Ana bileşen ────────────────────────────────────────────────────────────────
 export default function AnalyticsCharts({
-  orders, c, analytics, fromDate, toDate,
+  orders, c, analytics, fromDate, toDate, storeId,
 }: {
   orders: OrderWithItems[];
   c: PanelPalette;
   analytics?: RealAnalytics | null;
   fromDate?: string;
   toDate?: string;
+  storeId?: string | null;
 }) {
   const isReal = !!analytics?.hasData;
 
@@ -334,9 +322,9 @@ export default function AnalyticsCharts({
   const totals = useMemo(() => {
     const totalOrders   = series.reduce((s, p) => s + p.orders, 0);
     const totalRevenue  = series.reduce((s, p) => s + p.revenue, 0);
-    const totalVisitors = isReal
-      ? (analytics?.totalVisitors ?? 0)
-      : series.reduce((s, p) => s + p.visitors, 0);
+    // Benzersiz ziyaretçi sayısı doğrudan page_views'tan (IP bazlı tekilleştirme)
+    const totalVisitors = analytics?.totalVisitors ?? 0;
+    // Dönüşüm = (sipariş sayısı / toplam ziyaretçi) × 100 — sıfır ziyaretçide NaN guard'ı
     const conversion = totalVisitors > 0 ? (totalOrders / totalVisitors) * 100 : 0;
     const last7  = series.slice(Math.max(0, series.length - 7)).reduce((s, p) => s + p.visitors, 0);
     const prev7  = series.slice(Math.max(0, series.length - 14), Math.max(0, series.length - 7)).reduce((s, p) => s + p.visitors, 0);
@@ -344,20 +332,12 @@ export default function AnalyticsCharts({
     return { totalVisitors, totalOrders, totalRevenue, conversion, visTrend };
   }, [series, isReal, analytics]);
 
-  // Simülasyon modunda liveBase'i LiveTrafficCard'a geçir
-  const liveBase = Math.max(3, Math.round((series[series.length - 1]?.visitors ?? 0) / 42));
-
-  // Funnel
+  // Funnel — her zaman gerçek event verisi; API yanıtı yoksa sıfırlar gösterilir
+  // (sahte 0.14 çarpanlı simülasyon kaldırıldı)
   const funnel = useMemo<FunnelData>(() => {
-    if (isReal && analytics?.funnel) return analytics.funnel;
-    const v  = totals.totalVisitors;
-    return {
-      views: v,
-      addToCart: Math.round(v * 0.14),
-      checkout:  Math.round(v * 0.14 * 0.45),
-      purchases: totals.totalOrders,
-    };
-  }, [isReal, analytics, totals]);
+    if (analytics?.funnel) return analytics.funnel;
+    return { views: 0, addToCart: 0, checkout: 0, purchases: totals.totalOrders };
+  }, [analytics, totals]);
 
   const axisStyle     = { fontSize: 11, fontFamily: PANEL_BODY_FONT, fill: c.textSubtle };
   const maxOrders     = Math.max(1, ...series.map((p) => p.orders));
@@ -374,8 +354,8 @@ export default function AnalyticsCharts({
         <MetricCard index={1} c={c} label="Dönüşüm Oranı" value={`%${totals.conversion.toFixed(1)}`}
           trend={totals.totalOrders > 0 ? "aktif" : undefined} trendUp
           icon={TrendingUp} color="#22C55E" />
-        {/* İzole canlı trafik kartı — sadece bu yenilenir */}
-        <LiveTrafficCard index={2} c={c} isReal={isReal} liveBase={liveBase} />
+        {/* İzole canlı trafik kartı — sadece bu yenilenir, mağaza filtreli */}
+        <LiveTrafficCard index={2} c={c} storeId={storeId} />
         <MetricCard index={3} c={c} label="Sipariş Geçmişi" value={fmtNum(totals.totalOrders)}
           trend={`${series.length} gün`} trendUp icon={ShoppingBag} color="#2563EB" />
       </div>

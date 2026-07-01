@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import type { Store as StoreRow } from "@/types/store";
 import {
   User, Lock, Store, CheckCircle, AlertCircle, Loader2, Eye, EyeOff,
   ExternalLink, RefreshCw, Trash2, Shield, Truck, Globe, Copy, Check,
@@ -220,6 +221,141 @@ function PasswordSection({ c }: { c: PanelPalette }) {
   );
 }
 
+// ─── DeleteStoreModal — GitHub tarzı isim-doğrulamalı güvenli silme onayı ──────────
+
+function DeleteStoreModal({
+  store, c, onClose, onDeleted,
+}: {
+  store: StoreRow;
+  c: PanelPalette;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [confirmText, setConfirmText] = useState("");
+  const [deleting, setDeleting]       = useState(false);
+  const [err, setErr]                 = useState<string | null>(null);
+
+  // Güvenlik kilidi — mağaza adı birebir yazılmadan buton aktifleşmez
+  const match = confirmText.trim() === store.store_name;
+
+  const handleDelete = async () => {
+    if (!match || deleting) return;
+    setDeleting(true);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/stores?id=${encodeURIComponent(store.id)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({} as { error?: string }));
+        throw new Error(data.error ?? "Silme işlemi başarısız oldu.");
+      }
+      onDeleted();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Silme işlemi başarısız oldu. Lütfen tekrar deneyin.");
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] flex items-center justify-center px-4"
+      style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)" }}
+      onClick={() => !deleting && onClose()}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.94, y: 12 }}
+        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-w-md rounded-2xl p-6 space-y-5"
+        style={{ background: c.cardBg, border: "1px solid #DC262635", boxShadow: "0 24px 80px rgba(0,0,0,0.35)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3.5">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ background: "#DC262615", border: "1px solid #DC262630" }}>
+            <Trash2 className="w-5 h-5" style={{ color: "#DC2626" }} />
+          </div>
+          <div>
+            <h3 className="text-base font-bold leading-snug" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
+              Mağazayı Kalıcı Olarak Silmek İstediğinize Emin Misiniz?
+            </h3>
+            <p className="text-xs mt-0.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+              {store.store_name}
+              {store.custom_domain ? ` · ${store.custom_domain}` : ""}
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl px-4 py-3.5 text-[13px] leading-relaxed"
+          style={{ background: "#DC26260D", border: "1px solid #DC262625", color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
+          <span className="font-bold" style={{ color: "#DC2626" }}>Bu işlem geri alınamaz.</span>{" "}
+          Bu mağazayı sildiğinizde mağazaya bağlı tüm ürünler, siparişler, tasarım ayarları ve
+          alan adı bağlantıları tamamen silinecek ve web siteniz erişime kapatılacaktır.
+        </div>
+
+        <div className="space-y-2">
+          <input
+            type="text"
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder={store.store_name}
+            autoFocus
+            className="w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none"
+            style={{
+              background: c.inputBg,
+              border: `1px solid ${match ? "#DC2626" : c.border}`,
+              color: c.text,
+              fontFamily: PANEL_BODY_FONT,
+              transition: "border-color 0.2s",
+            }}
+          />
+          <p className="text-[11px]" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+            Onaylamak için lütfen mağazanın adını (
+            <span className="font-mono font-bold" style={{ color: c.text }}>{store.store_name}</span>
+            ) buraya yazın.
+          </p>
+        </div>
+
+        {err && (
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
+            style={{ background: "#DC262612", border: "1px solid #DC262640", color: "#DC2626", fontFamily: PANEL_BODY_FONT }}>
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+            {err}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2.5 pt-1">
+          <button
+            onClick={onClose}
+            disabled={deleting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
+            style={{ background: c.hover, color: c.textMuted, border: `1px solid ${c.border}`, fontFamily: PANEL_BODY_FONT }}
+          >
+            Vazgeç
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={!match || deleting}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all"
+            style={{
+              background: match ? "#DC2626" : `${c.hover}`,
+              color: match ? "#FFFFFF" : c.textSubtle,
+              border: `1px solid ${match ? "#DC2626" : c.border}`,
+              fontFamily: PANEL_BODY_FONT,
+              cursor: match && !deleting ? "pointer" : "not-allowed",
+              boxShadow: match && !deleting ? "0 6px 20px rgba(220,38,38,0.35)" : "none",
+            }}
+          >
+            {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            {deleting ? "Siliniyor…" : "Mağazayı Tamamen Sil ve Kapat"}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ─── StoresSection ────────────────────────────────────────────────────────────────
 
 function StoresSection({ c }: { c: PanelPalette }) {
@@ -227,6 +363,22 @@ function StoresSection({ c }: { c: PanelPalette }) {
   const { stores, loading, refreshStores } = useActiveStore();
   const fetchStores = useCallback(() => refreshStores(false), [refreshStores]);
   const tr: React.CSSProperties = { transition: "background-color 0.3s, color 0.3s, border-color 0.3s" };
+
+  // ── Silme akışı ─────────────────────────────────────────────────────────────
+  const [deleteTarget, setDeleteTarget] = useState<StoreRow | null>(null);
+  const [removedIds,   setRemovedIds]   = useState<string[]>([]);
+  const [toast,        setToast]        = useState<string | null>(null);
+
+  // Silinen mağaza context yenilenmeden (0 gecikme) listeden düşer
+  const visibleStores = stores.filter((s) => !removedIds.includes(s.id));
+
+  const handleDeleted = (deleted: StoreRow) => {
+    setRemovedIds((prev) => [...prev, deleted.id]);
+    setDeleteTarget(null);
+    setToast(`"${deleted.store_name}" mağazası başarıyla tamamen silindi`);
+    refreshStores(true); // context'i sessizce senkronla (aktif mağaza seçimi dahil)
+    setTimeout(() => setToast(null), 4000);
+  };
 
   const STATUS_COLOR: Record<string, string> = {
     active: "#059669", inactive: "#6B7280", draft: "#D97706", suspended: "#DC2626", pending: "#D97706",
@@ -257,14 +409,14 @@ function StoresSection({ c }: { c: PanelPalette }) {
             <div key={i} className="h-16 rounded-xl animate-pulse" style={{ background: c.hover }} />
           ))}
         </div>
-      ) : stores.length === 0 ? (
+      ) : visibleStores.length === 0 ? (
         <div className="flex flex-col items-center py-10 text-center">
           <Store className="w-8 h-8 mb-3" style={{ color: c.textSubtle }} />
           <p className="text-sm" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Henüz mağaza oluşturmadınız.</p>
         </div>
       ) : (
         <div className="space-y-2.5">
-          {stores.map((store) => {
+          {visibleStores.map((store) => {
             const statusColor = STATUS_COLOR[store.status ?? "inactive"] ?? "#6B7280";
             return (
               <div key={store.id} className="flex items-center gap-4 px-4 py-3.5 rounded-xl"
@@ -287,6 +439,20 @@ function StoresSection({ c }: { c: PanelPalette }) {
                     )}
                   </div>
                 </div>
+                <button
+                  onClick={() => setDeleteTarget(store)}
+                  title="Mağazayı Kalıcı Olarak Sil"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all duration-200 hover:scale-105"
+                  style={{
+                    ...tr,
+                    background: "#DC262610",
+                    border: "1px solid #DC26262E",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 0 16px rgba(220,38,38,0.35)"; e.currentTarget.style.background = "#DC262620"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.background = "#DC262610"; }}
+                >
+                  <Trash2 className="w-3.5 h-3.5" style={{ color: "#DC2626" }} />
+                </button>
                 <a
                   href={`/panel/${store.id}`}
                   target="_blank"
@@ -304,8 +470,48 @@ function StoresSection({ c }: { c: PanelPalette }) {
       )}
 
       <p className="text-[11px]" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-        {stores.length} mağaza · Yeni mağaza oluşturmak için Ürün Kataloğu sayfasını kullanın.
+        {visibleStores.length} mağaza · Yeni mağaza oluşturmak için Ürün Kataloğu sayfasını kullanın.
       </p>
+
+      {/* Güvenli silme onay modalı */}
+      <AnimatePresence>
+        {deleteTarget && (
+          <DeleteStoreModal
+            key={deleteTarget.id}
+            store={deleteTarget}
+            c={c}
+            onClose={() => setDeleteTarget(null)}
+            onDeleted={() => handleDeleted(deleteTarget)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Başarı toast'ı */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed bottom-6 inset-x-0 z-[70] flex justify-center pointer-events-none px-4"
+          >
+            <div
+              className="pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-2xl text-sm font-medium"
+              style={{
+                background: c.cardBg,
+                border: "1px solid #05966940",
+                boxShadow: "0 16px 48px rgba(0,0,0,0.22)",
+                color: c.text,
+                fontFamily: PANEL_BODY_FONT,
+              }}
+            >
+              <CheckCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#059669" }} />
+              {toast}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }

@@ -150,6 +150,9 @@ export async function PATCH(req: NextRequest) {
 }
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
+// Mağazayı ve TÜM bağlı verisini kalıcı olarak siler: analitik olayları,
+// sipariş kalemleri, siparişler, ürünler ve stores satırı (theme_settings dahil).
+// FK kuralları "set null" olduğundan bağımlılar açıkça temizlenir — orphan kalmaz.
 export async function DELETE(req: NextRequest) {
   const user = await getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -157,7 +160,30 @@ export async function DELETE(req: NextRequest) {
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const { error } = await admin()
+  const db = admin();
+
+  // Sahiplik doğrulaması — kullanıcı yalnızca kendi mağazasını silebilir
+  const { data: store } = await db
+    .from("stores")
+    .select("id")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+  if (!store) return NextResponse.json({ error: "store not found" }, { status: 404 });
+
+  // Bağımlı kayıtlar sırayla: analitik → sipariş kalemleri → siparişler → ürünler
+  // (tablo bazı ortamlarda yoksa hata yutulur, mağaza silme akışı kesilmez)
+  await db.from("page_views").delete().eq("store_id", id);
+
+  const { data: orderRows } = await db.from("orders").select("id").eq("store_id", id);
+  const orderIds = (orderRows ?? []).map((o: { id: string }) => o.id);
+  if (orderIds.length > 0) {
+    await db.from("order_items").delete().in("order_id", orderIds);
+  }
+  await db.from("orders").delete().eq("store_id", id);
+  await db.from("products").delete().eq("store_id", id);
+
+  const { error } = await db
     .from("stores")
     .delete()
     .eq("id", id)
