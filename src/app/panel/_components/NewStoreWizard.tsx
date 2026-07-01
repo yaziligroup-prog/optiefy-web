@@ -56,10 +56,9 @@ const EMPTY: WizardData = {
 };
 
 const STEPS = [
-  { num: "01", title: "Ürün fotoğrafı",  sub: "Yapay zekanın analiz edeceği görseli yükleyin" },
-  { num: "02", title: "Ürününüz nedir?", sub: "Kısaca tanımlayın — gerisini AI halleder" },
-  { num: "03", title: "Fiyatlandırma",   sub: "Satış fiyatını ve para birimini belirleyin" },
-  { num: "04", title: "Alan adı",        sub: "Mağazanızın internet adresi" },
+  { num: "01", title: "Ürün Görseli & Açıklama", sub: "Görseli yükleyin ve ürünü 2-3 kelimeyle tanımlayın" },
+  { num: "02", title: "Satış Fiyatı",             sub: "Ürünün dükkanda görünecek fiyatını girin" },
+  { num: "03", title: "Alan Adı Ayarı",           sub: "Mağazanızın internet adresi" },
 ] as const;
 
 interface Props {
@@ -129,8 +128,10 @@ export default function NewStoreWizard({ open, onClose, onCreated }: Props) {
   const patch = (p: Partial<WizardData>) => setData((d) => ({ ...d, ...p }));
 
   const canProceed = (): boolean => {
-    if (step === 1) return data.productDesc.trim().length >= 2 || !!data.photoPreview;
-    if (step === 2) {
+    // Adım 0: görsel + açıklama — ikisinden en az biri gerekli
+    if (step === 0) return data.productDesc.trim().length >= 2 || !!data.photoPreview;
+    // Adım 1: fiyat — zorunlu
+    if (step === 1) {
       const n = parseFloat(data.price.replace(",", "."));
       return !isNaN(n) && n > 0;
     }
@@ -138,8 +139,8 @@ export default function NewStoreWizard({ open, onClose, onCreated }: Props) {
   };
 
   const goNext = () => {
-    if (step === 1 && !canProceed()) { setFieldErr("Ürününüzü tanımlayın veya fotoğraf ekleyin"); return; }
-    if (step === 2 && !canProceed()) { setFieldErr("Geçerli bir fiyat girin"); return; }
+    if (step === 0 && !canProceed()) { setFieldErr("Ürünü tanımlayın veya fotoğraf ekleyin"); return; }
+    if (step === 1 && !canProceed()) { setFieldErr("Geçerli bir fiyat girin"); return; }
     setFieldErr("");
     if (step < STEPS.length - 1) setStep((s) => s + 1);
     else void handleGenerate();
@@ -281,43 +282,43 @@ export default function NewStoreWizard({ open, onClose, onCreated }: Props) {
                 </div>
 
                 {/* Body */}
-                <div className="px-7 py-6" style={{ minHeight: 210 }}>
+                <div className="px-7 py-6" style={{ minHeight: 230 }}>
                   <AnimatePresence mode="wait">
+
+                    {/* ── ADIM 1: Görsel + Açıklama ── */}
                     {step === 0 && (
-                      <motion.div key="s0" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.2 }}>
+                      <motion.div key="s0" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.2 }} className="space-y-4">
                         <UploadZone
                           previewUrl={data.photoPreview}
-                          onImageSelect={(_f, preview) => patch({ photoPreview: preview })}
+                          onImageSelect={(_f, preview) => { patch({ photoPreview: preview }); setFieldErr(""); }}
                         />
-                        <p className="text-xs mt-3 text-center" style={{ color: "#6B7280", fontFamily: PANEL_BODY_FONT }}>
-                          İsteğe bağlı — fotoğraf eklerseniz yapay zeka çok daha isabetli çalışır
+                        <div>
+                          <input
+                            type="text" placeholder="Ürünü 2-3 kelimeyle tanımlayın… (ör: el yapımı seramik kase)"
+                            value={data.productDesc}
+                            onChange={(e) => { patch({ productDesc: e.target.value }); setFieldErr(""); }}
+                            onKeyDown={(e) => e.key === "Enter" && goNext()}
+                            style={inputStyle}
+                          />
+                          <div className="flex flex-wrap gap-2 mt-2.5">
+                            {["Seramik kupa", "Organik sabun", "Gümüş kolye", "Hasır çanta", "Deri cüzdan"].map((chip) => (
+                              <button key={chip} onClick={() => { patch({ productDesc: chip }); setFieldErr(""); }}
+                                className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors"
+                                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#C4B5FD", fontFamily: PANEL_BODY_FONT }}>
+                                {chip}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <p className="text-xs" style={{ color: "#4B5563", fontFamily: PANEL_BODY_FONT }}>
+                          Görsel yüklerseniz AI çok daha isabetli çalışır · İkisi de isteğe bağlı
                         </p>
                       </motion.div>
                     )}
 
+                    {/* ── ADIM 2: Fiyat ── */}
                     {step === 1 && (
                       <motion.div key="s1" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.2 }}>
-                        <input
-                          autoFocus type="text" placeholder="El yapımı deri cüzdan…"
-                          value={data.productDesc}
-                          onChange={(e) => { patch({ productDesc: e.target.value }); setFieldErr(""); }}
-                          onKeyDown={(e) => e.key === "Enter" && goNext()}
-                          style={inputStyle}
-                        />
-                        <div className="flex flex-wrap gap-2 mt-3">
-                          {["Seramik kupa", "Organik sabun", "Gümüş kolye", "Hasır çanta"].map((chip) => (
-                            <button key={chip} onClick={() => { patch({ productDesc: chip }); setFieldErr(""); }}
-                              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", color: "#C4B5FD", fontFamily: PANEL_BODY_FONT }}>
-                              {chip}
-                            </button>
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-
-                    {step === 2 && (
-                      <motion.div key="s2" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.2 }}>
                         <div className="flex gap-2.5">
                           <div className="flex rounded-xl overflow-hidden flex-shrink-0" style={{ border: "1.5px solid rgba(255,255,255,0.12)" }}>
                             {(["TRY", "USD"] as const).map((cur) => (
@@ -327,7 +328,7 @@ export default function NewStoreWizard({ open, onClose, onCreated }: Props) {
                                   background: data.currency === cur ? "linear-gradient(135deg,#7C3AED,#EC4899)" : "transparent",
                                   color: data.currency === cur ? "#FFFFFF" : "#9CA3AF", fontFamily: PANEL_BODY_FONT,
                                 }}>
-                                {cur === "TRY" ? "₺" : "$"}
+                                {cur === "TRY" ? "₺ TRY" : "$ USD"}
                               </button>
                             ))}
                           </div>
@@ -341,13 +342,14 @@ export default function NewStoreWizard({ open, onClose, onCreated }: Props) {
                           />
                         </div>
                         <p className="text-xs mt-3" style={{ color: "#6B7280", fontFamily: PANEL_BODY_FONT }}>
-                          Yapay zeka bu fiyata uygun premium bir konumlandırma yapacak
+                          AI bu fiyata uygun premium konumlandırma ve SEO metinleri üretecek
                         </p>
                       </motion.div>
                     )}
 
-                    {step === 3 && (
-                      <motion.div key="s3" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.2 }}>
+                    {/* ── ADIM 3: Domain ── */}
+                    {step === 2 && (
+                      <motion.div key="s2d" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.2 }}>
                         {/* Üç domain seçenek kartı */}
                         <div className="grid grid-cols-3 gap-2 mb-4">
                           {([
@@ -461,7 +463,7 @@ export default function NewStoreWizard({ open, onClose, onCreated }: Props) {
                     style={{ background: "linear-gradient(135deg,#7C3AED,#EC4899)", boxShadow: "0 8px 24px rgba(124,58,237,0.35)", fontFamily: PANEL_BODY_FONT }}
                   >
                     {step === STEPS.length - 1
-                      ? <><Sparkles className="w-4 h-4" /> Vitrini Oluştur</>
+                      ? <><Sparkles className="w-4 h-4" /> Mağazamı Oluştur</>
                       : <>Devam <ArrowRight className="w-4 h-4" /></>}
                   </motion.button>
                 </div>
@@ -556,10 +558,10 @@ export default function NewStoreWizard({ open, onClose, onCreated }: Props) {
                 </motion.div>
 
                 <h3 style={{ fontFamily: PANEL_DISPLAY_FONT, fontSize: "1.6rem", fontWeight: 400, color: "#F5F5F4", marginBottom: 8 }}>
-                  Vitriniz hazır! 🎉
+                  Mağazanız hazır!
                 </h3>
                 <p className="text-sm max-w-xs leading-relaxed mb-8" style={{ color: "#9CA3AF", fontFamily: PANEL_BODY_FONT }}>
-                  Yapay zeka mağazanızı oluşturdu. Katalogunuzda görüntüleyebilir, temasını değiştirebilir ve hemen yayına alabilirsiniz.
+                  Yapay zeka yeni mağazanızı oluşturdu. Sol üstteki mağaza seçiciden görüntüleyebilir, temasını değiştirebilir ve yayına alabilirsiniz.
                 </p>
 
                 <motion.button

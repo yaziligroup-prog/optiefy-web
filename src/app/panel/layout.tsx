@@ -10,7 +10,7 @@ import {
   LayoutDashboard, ShoppingBag, Package, Users, Store, Settings,
   Search, Bell, Sun, Moon, ChevronDown, Menu,
   LogOut, User as UserIcon, CreditCard, ArrowUpRight,
-  Check, Globe, Plus, Zap, Lock, X as XIcon,
+  Check, Globe, Plus, Lock, X as XIcon,
 } from "lucide-react";
 import OptiefyIcon from "@/components/OptiefyIcon";
 import {
@@ -41,7 +41,75 @@ const FREE_STORE_LIMIT = 1; // Ücretsiz planda 1 mağaza; fazlası için upgrad
 
 // ─── UpgradeGate modal ───────────────────────────────────────────────────────
 
-function UpgradeGate({ open, onClose, storeCount }: { open: boolean; onClose: () => void; storeCount: number }) {
+// Ana sayfadaki PLANS ile birebir eşlenmiş plan verisi
+const UPGRADE_PLANS = [
+  {
+    id:        "free",
+    name:      "Ücretsiz",
+    price:     "$0",
+    period:    "/ ay",
+    badge:     null as string | null,
+    accent:    "#6B7280",
+    popular:   false,
+    current:   true,
+    features:  [
+      "1 mağazaya kadar",
+      "Ücretsiz alt alan adı (.optiefy.com)",
+      "Sınırsız site trafiği",
+      "Temel SEO araçları",
+      "Aylık 3 ürün için AI içerik üretimi",
+      "SSL sertifikası dahil",
+    ],
+    cta:       "Mevcut Plan",
+    ctaAction: "none" as "wizard" | "soon" | "none",
+  },
+  {
+    id:        "launch",
+    name:      "Başlangıç",
+    price:     "$25",
+    period:    "/ ay",
+    badge:     "EN POPÜLER",
+    accent:    "#7C3AED",
+    popular:   true,
+    current:   false,
+    features:  [
+      "Ücretsiz planın tüm özellikleri",
+      "Kendi alan adını bağla",
+      "PayTR Sanal POS entegrasyonu",
+      "Sınırsız AI içerik ve görsel üretimi",
+      "Otomatik fatura ve ürün açıklamaları",
+      "Öncelikli müşteri desteği",
+    ],
+    cta:       "Hemen Başla",
+    ctaAction: "soon" as "wizard" | "soon" | "none",
+  },
+  {
+    id:        "grow",
+    name:      "Büyüme",
+    price:     "$49",
+    period:    "/ ay",
+    badge:     null as string | null,
+    accent:    "#EC4899",
+    popular:   false,
+    current:   false,
+    features:  [
+      "Başlangıç planın tüm özellikleri",
+      "Trendyol & Hepsiburada senkronizasyonu",
+      "Çoklu kanal sipariş yönetimi",
+      "Sınırsız AI kotası — hiçbir sınır yok",
+      "1-1 Uzman danışman desteği",
+      "Gelişmiş satış analitiği",
+    ],
+    cta:       "Büyümeye Başla",
+    ctaAction: "soon" as "wizard" | "soon" | "none",
+  },
+] as const;
+
+function UpgradeGate({
+  open, onClose, onContinue, storeCount,
+}: {
+  open: boolean; onClose: () => void; onContinue: () => void; storeCount: number;
+}) {
   useEffect(() => {
     if (!open) return;
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -50,39 +118,6 @@ function UpgradeGate({ open, onClose, storeCount }: { open: boolean; onClose: ()
   }, [open, onClose]);
 
   if (!open) return null;
-
-  const PLANS = [
-    {
-      id: "starter",
-      name: "Starter",
-      price: "₺199 / ay",
-      stores: 3,
-      features: ["3 mağazaya kadar", "AI vitrin üretici", "Özel domain", "Kargo entegrasyonu"],
-      cta: "Starter'a Geç",
-      accent: "#6366F1",
-      popular: false,
-    },
-    {
-      id: "growth",
-      name: "Growth",
-      price: "₺399 / ay",
-      stores: 10,
-      features: ["10 mağazaya kadar", "Öncelikli AI işlemi", "Pazaryeri entegrasyonu", "Gelişmiş analitik"],
-      cta: "Growth'a Geç",
-      accent: "#7C3AED",
-      popular: true,
-    },
-    {
-      id: "pro",
-      name: "Pro",
-      price: "₺799 / ay",
-      stores: -1,
-      features: ["Sınırsız mağaza", "Beyaz etiket", "API erişimi", "Öncelikli destek"],
-      cta: "Pro'ya Geç",
-      accent: "#EC4899",
-      popular: false,
-    },
-  ];
 
   return (
     <AnimatePresence>
@@ -117,79 +152,92 @@ function UpgradeGate({ open, onClose, storeCount }: { open: boolean; onClose: ()
           </button>
 
           {/* Header */}
-          <div className="px-7 pt-8 pb-6 text-center relative">
+          <div className="px-7 pt-8 pb-5 text-center relative">
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
               style={{ background: "linear-gradient(135deg,#7C3AED,#EC4899)", boxShadow: "0 8px 32px rgba(124,58,237,0.4)" }}>
               <Lock className="w-6 h-6 text-white" />
             </div>
-            <h2 style={{ fontFamily: PANEL_DISPLAY_FONT, fontSize: "1.7rem", fontWeight: 400, color: "#F5F5F4", marginBottom: 8 }}>
-              Yeni mağaza hakkı gerekli
+            <h2 style={{ fontFamily: PANEL_DISPLAY_FONT, fontSize: "1.65rem", fontWeight: 400, color: "#F5F5F4", marginBottom: 8 }}>
+              Planınızı yükseltin
             </h2>
-            <p className="text-sm max-w-sm mx-auto leading-relaxed" style={{ color: "#9CA3AF", fontFamily: PANEL_BODY_FONT }}>
-              Şu an <span className="font-semibold" style={{ color: "#C084FC" }}>{storeCount} mağaza</span> ile ücretsiz planınızı kullanıyorsunuz.
-              İkinci mağazanızı açmak için planınızı yükseltin.
+            <p className="text-sm max-w-xs mx-auto leading-relaxed" style={{ color: "#9CA3AF", fontFamily: PANEL_BODY_FONT }}>
+              Şu an <span className="font-semibold" style={{ color: "#C084FC" }}>{storeCount} mağaza</span> ile ücretsiz plandaki sınırınıza ulaştınız.
+              Yeni mağaza açmak için bir plan seçin.
             </p>
           </div>
 
           {/* Plan kartları */}
-          <div className="px-5 pb-7 grid grid-cols-3 gap-3">
-            {PLANS.map((plan) => (
+          <div className="px-5 pb-5 grid grid-cols-3 gap-3">
+            {UPGRADE_PLANS.map((plan) => (
               <div key={plan.id}
                 className="rounded-2xl p-4 relative flex flex-col"
                 style={{
-                  background: plan.popular ? `${plan.accent}12` : "rgba(255,255,255,0.04)",
-                  border: plan.popular ? `1.5px solid ${plan.accent}50` : "1px solid rgba(255,255,255,0.08)",
+                  background: plan.popular ? `${plan.accent}10` : "rgba(255,255,255,0.03)",
+                  border: plan.popular ? `1.5px solid ${plan.accent}45` : "1px solid rgba(255,255,255,0.07)",
                 }}>
-                {plan.popular && (
-                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-bold px-3 py-1 rounded-full whitespace-nowrap"
+                {plan.badge && (
+                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[9px] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap"
                     style={{ background: plan.accent, color: "white", boxShadow: `0 4px 12px ${plan.accent}50` }}>
-                    En Popüler
+                    {plan.badge}
                   </span>
                 )}
 
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: `${plan.accent}20` }}>
-                    <Zap className="w-3.5 h-3.5" style={{ color: plan.accent }} />
+                {/* İsim + fiyat */}
+                <div className="mb-3">
+                  <p className="text-xs font-bold uppercase tracking-wider mb-1.5"
+                    style={{ color: plan.popular ? plan.accent : "#6B7280", fontFamily: PANEL_BODY_FONT }}>
+                    {plan.name}
+                  </p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-bold" style={{ color: "#F5F5F4", fontFamily: PANEL_BODY_FONT }}>{plan.price}</span>
+                    <span className="text-xs" style={{ color: "#6B7280", fontFamily: PANEL_BODY_FONT }}>{plan.period}</span>
                   </div>
-                  <p className="text-sm font-bold" style={{ color: "#F5F5F4", fontFamily: PANEL_BODY_FONT }}>{plan.name}</p>
                 </div>
-
-                <p className="text-lg font-bold mb-3" style={{ color: plan.accent, fontFamily: PANEL_BODY_FONT }}>{plan.price}</p>
 
                 <ul className="space-y-1.5 mb-4 flex-1">
                   {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-1.5 text-[11px]" style={{ color: "#9CA3AF", fontFamily: PANEL_BODY_FONT }}>
-                      <Check className="w-3 h-3 flex-shrink-0 mt-0.5" style={{ color: plan.accent }} />
+                    <li key={f} className="flex items-start gap-1.5 text-[11px] leading-snug"
+                      style={{ color: plan.current ? "#4B5563" : "#9CA3AF", fontFamily: PANEL_BODY_FONT }}>
+                      <Check className="w-3 h-3 flex-shrink-0 mt-0.5"
+                        style={{ color: plan.current ? "#374151" : plan.accent }} />
                       {f}
                     </li>
                   ))}
                 </ul>
 
-                <button
-                  className="w-full py-2.5 rounded-xl text-xs font-bold transition-all"
-                  style={{
-                    background: plan.popular ? plan.accent : "rgba(255,255,255,0.06)",
-                    color: plan.popular ? "white" : "#9CA3AF",
-                    border: plan.popular ? "none" : "1px solid rgba(255,255,255,0.1)",
-                    opacity: 0.7, cursor: "not-allowed",
-                  }}
-                  title="Ödeme sistemi yakında aktif olacak"
-                >
-                  {plan.cta}
-                </button>
+                {plan.ctaAction === "none" ? (
+                  <div className="w-full py-2.5 rounded-xl text-xs font-semibold text-center"
+                    style={{ background: "rgba(255,255,255,0.04)", color: "#4B5563",
+                             border: "1px solid rgba(255,255,255,0.06)", fontFamily: PANEL_BODY_FONT }}>
+                    Mevcut Plan
+                  </div>
+                ) : (
+                  <button
+                    onClick={onContinue}
+                    className="w-full py-2.5 rounded-xl text-xs font-bold transition-all hover:opacity-90 active:scale-[0.97]"
+                    style={{
+                      background: plan.popular ? `linear-gradient(135deg,${plan.accent},#9333EA)` : "rgba(255,255,255,0.06)",
+                      color:      plan.popular ? "white" : "#9CA3AF",
+                      border:     plan.popular ? "none" : "1px solid rgba(255,255,255,0.1)",
+                      boxShadow:  plan.popular ? `0 6px 20px ${plan.accent}40` : "none",
+                      fontFamily: PANEL_BODY_FONT,
+                    }}>
+                    {plan.cta}
+                  </button>
+                )}
               </div>
             ))}
           </div>
 
-          {/* Alt not */}
-          <div className="px-7 pb-6 text-center">
-            <p className="text-xs" style={{ color: "#6B7280", fontFamily: PANEL_BODY_FONT }}>
-              Ödeme sistemi yakında aktif olacak · Şimdilik sihirbazı test edebilirsiniz
+          {/* Test modu bypass */}
+          <div className="px-7 pb-6 text-center" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+            <p className="text-xs pt-4" style={{ color: "#4B5563", fontFamily: PANEL_BODY_FONT }}>
+              Ödeme entegrasyonu hazırlanıyor · Şimdilik ücretsiz test edebilirsiniz
             </p>
-            <button onClick={onClose}
-              className="mt-3 text-xs font-semibold underline underline-offset-2"
-              style={{ color: "#A855F7", fontFamily: PANEL_BODY_FONT }}>
-              Yine de devam et (test modu)
+            <button onClick={onContinue}
+              className="mt-2 text-xs font-semibold hover:opacity-80 transition-opacity"
+              style={{ color: "#6D28D9", fontFamily: PANEL_BODY_FONT, textDecoration: "underline", textUnderlineOffset: 3 }}>
+              Ödeme yapmadan test modunda devam et →
             </button>
           </div>
         </motion.div>
@@ -609,6 +657,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       <UpgradeGate
         open={upgradeOpen}
         onClose={() => setUpgradeOpen(false)}
+        onContinue={() => { setUpgradeOpen(false); setWizardOpen(true); }}
         storeCount={stores.length}
       />
     </div>
