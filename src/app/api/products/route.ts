@@ -58,9 +58,7 @@ export async function GET(req: NextRequest) {
 
   const { data: products, error } = await admin()
     .from("products")
-    .select(
-      "id, created_at, store_id, user_id, name, price, currency, description, image_url, size_variants, status"
-    )
+    .select("*")
     .eq("store_id", storeId)
     .order("created_at", { ascending: false });
 

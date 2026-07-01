@@ -28,9 +28,17 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import OpenAI, { toFile } from "openai";
 import { migrateStoreImages } from "@/utils/supabase/upload-images";
+
+function adminClient() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  return createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -608,11 +616,27 @@ export async function POST(req: NextRequest) {
         name:          p.name,
         size_variants: p.size_variants,
         price:         p.price > 0 ? p.price : finalPrice,
+        currency:      body.currency ?? "TRY",
+        status:        "active",
         ...(finalImageUrls && finalImageUrls[i] ? { image_url: finalImageUrls[i] } : {}),
       }));
 
-      const { error: prodErr } = await supabase.from("products").insert(productRows);
-      if (prodErr) console.warn("Products insert warning:", prodErr.message);
+      const { error: prodErr } = await adminClient().from("products").insert(productRows);
+      if (prodErr) {
+        console.error("Products insert error:", prodErr.code, prodErr.message);
+        // Fallback: retry without optional columns that might not exist in older schemas
+        if (prodErr.code === "42703") {
+          const minimalRows = generated.products.map((p, i) => ({
+            store_id: store.id,
+            user_id:  user.id,
+            name:     p.name,
+            price:    p.price > 0 ? p.price : finalPrice,
+            ...(finalImageUrls && finalImageUrls[i] ? { image_url: finalImageUrls[i] } : {}),
+          }));
+          const { error: prodErr2 } = await adminClient().from("products").insert(minimalRows);
+          if (prodErr2) console.error("Products minimal insert error:", prodErr2.code, prodErr2.message);
+        }
+      }
     }
 
     return NextResponse.json({

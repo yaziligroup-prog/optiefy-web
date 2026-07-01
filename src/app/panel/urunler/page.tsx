@@ -53,6 +53,8 @@ export default function UrunlerPage() {
       const data = await res.json() as Product[];
       setProducts(data);
       productsReady.current = true;
+    } else {
+      console.error("Products fetch failed:", res.status, await res.text().catch(() => ""));
     }
     setLoading(false);
     setRefreshing(false);
