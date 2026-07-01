@@ -26,14 +26,17 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
+  const storeId = searchParams.get("storeId") || null;
 
   // ── Hızlı path: sadece canlı ziyaretçi (LiveTrafficCard'ın 30sn poll'u) ──
   if (searchParams.get("liveOnly") === "true") {
-    const { data: rows } = await supabase
+    let q = supabase
       .from("page_views")
       .select("ip_address")
       .gte("created_at", new Date(Date.now() - 5 * 60_000).toISOString())
       .limit(500);
+    if (storeId) q = q.eq("store_id", storeId);
+    const { data: rows } = await q;
     const liveVisitors = new Set((rows ?? []).map((r) => r.ip_address as string)).size;
     return NextResponse.json({ liveVisitors });
   }
@@ -49,13 +52,16 @@ export async function GET(req: NextRequest) {
   const sinceISO = new Date(since).toISOString();
   const untilISO = new Date(until).toISOString();
 
-  const { data: rows, error } = await supabase
+  let pvQuery = supabase
     .from("page_views")
     .select("created_at, ip_address, event_type")
     .gte("created_at", sinceISO)
     .lte("created_at", untilISO)
     .order("created_at", { ascending: false })
     .limit(50_000);
+  if (storeId) pvQuery = pvQuery.eq("store_id", storeId);
+
+  const { data: rows, error } = await pvQuery;
 
   if (error || !rows) {
     return NextResponse.json({
@@ -96,13 +102,14 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const { count: purchasesCount } = await supabase
+  let ordersQuery = supabase
     .from("orders")
     .select("id", { count: "exact", head: true })
     .gte("created_at", sinceISO)
     .lte("created_at", untilISO)
     .neq("status", "cancelled");
-
+  if (storeId) ordersQuery = ordersQuery.eq("store_id", storeId);
+  const { count: purchasesCount } = await ordersQuery;
   return NextResponse.json({
     hasData:       rows.length > 0,
     days:          days.map((d) => ({ key: d.key, views: d.views, visitors: d.ips.size })),

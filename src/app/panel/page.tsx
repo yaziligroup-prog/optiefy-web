@@ -13,6 +13,7 @@ import type { OrderWithItems, OrderStatus } from "@/types/order";
 import {
   usePanelTheme, PANEL_DISPLAY_FONT, PANEL_BODY_FONT, type PanelPalette,
 } from "./_lib/theme";
+import { useActiveStore } from "./_lib/storeContext";
 import type { RealAnalytics } from "./_components/AnalyticsCharts";
 
 const AnalyticsCharts = dynamic(() => import("./_components/AnalyticsCharts"), {
@@ -463,6 +464,8 @@ function StatCard({
 
 export default function DashboardPage() {
   const { c, isDark } = usePanelTheme();
+  const { activeStore, activeStoreId } = useActiveStore();
+
   const [orders,       setOrders]      = useState<OrderWithItems[]>([]);
   const [loading,      setLoading]     = useState(true);
   const [aLoading,     setALoading]    = useState(true);   // yalnızca ilk yükleme
@@ -493,27 +496,31 @@ export default function DashboardPage() {
     }
   }, [period, customFrom, customTo]);
 
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(async (sid: string | null) => {
+    if (!sid) { setOrders([]); setLoading(false); return; }
     setLoading(true);
     const supabase = createClient();
-    const { data, error } = await supabase
+    let q = supabase
       .from("orders")
       .select("*, order_items(product_name, quantity, id, order_id, product_id, unit_price, image, line_total)")
       .order("created_at", { ascending: false })
       .limit(50);
+    q = q.eq("store_id", sid);
+    const { data, error } = await q;
     if (!error && data) setOrders(data as OrderWithItems[]);
     setLoading(false);
   }, []);
 
   // İlk yüklemede skeleton, sonraki güncellemelerde stale-while-revalidate
-  const fetchAnalytics = useCallback(async (from: string, to: string) => {
+  const fetchAnalytics = useCallback(async (from: string, to: string, sid: string | null) => {
+    if (!sid) { setAnalytics(null); setALoading(false); return; }
     if (!analyticsReady.current) {
       setALoading(true);
     } else {
       setRefreshing(true);
     }
     try {
-      const qs  = new URLSearchParams({ from, to });
+      const qs  = new URLSearchParams({ from, to, storeId: sid });
       const res = await fetch(`/api/analytics?${qs}`, { cache: "no-store" });
       if (!res.ok) { if (!analyticsReady.current) setAnalytics(null); return; }
       setAnalytics((await res.json()) as RealAnalytics);
@@ -528,13 +535,22 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setToday(new Date().toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }));
-    fetchOrders();
-  }, [fetchOrders]);
+  }, []);
 
-  // Tarih aralığı değişince çek — 30sn interval YOK (LiveTrafficCard kendi poll'unu yapar)
+  // Mağaza değişince veya tarih aralığı değişince siparişleri yeniden çek
   useEffect(() => {
-    fetchAnalytics(appliedRange.from, appliedRange.to);
-  }, [fetchAnalytics, appliedRange]);
+    fetchOrders(activeStoreId);
+    // analyticsReady sıfırla — yeni mağazada skeleton göster
+    analyticsReady.current = false;
+    setALoading(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStoreId]);
+
+  // Tarih aralığı veya mağaza değişince analitik çek
+  useEffect(() => {
+    fetchAnalytics(appliedRange.from, appliedRange.to, activeStoreId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedRange, activeStoreId]);
 
   // ── İstatistikler ──
   const active         = orders.filter((o) => o.status !== "cancelled");
@@ -570,15 +586,21 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 mb-2">
               <motion.span animate={{ scale: [1, 1.3, 1] }} transition={{ duration: 1.8, repeat: Infinity }}
                 className="w-2 h-2 rounded-full" style={{ background: "#22C55E" }} />
-              <span className="text-xs font-semibold" style={{ color: "#16A34A", fontFamily: PANEL_BODY_FONT }}>Mağazanız canlı</span>
+              <span className="text-xs font-semibold" style={{ color: "#16A34A", fontFamily: PANEL_BODY_FONT }}>Canlı</span>
+              {activeStore && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                  style={{ background: "rgba(124,58,237,0.12)", color: "#A78BFA", fontFamily: PANEL_BODY_FONT }}>
+                  {activeStore.store_name}
+                </span>
+              )}
               {today && <span className="text-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>· {today}</span>}
             </div>
             <h1 style={{ fontFamily: PANEL_DISPLAY_FONT, fontSize: "clamp(2rem,4vw,2.8rem)", fontWeight: 400, lineHeight: 1.1, letterSpacing: "-0.015em", color: c.text }}>
-              İşletmenizin bugünkü özeti
+              {activeStore ? `${activeStore.store_name} özeti` : "Dashboard"}
             </h1>
-            <p className="text-sm mt-1.5" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>İşte gerçek zamanlı sipariş tablonuz.</p>
+            <p className="text-sm mt-1.5" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Gerçek zamanlı sipariş ve trafik verileri bu mağazaya ait.</p>
           </div>
-          <button onClick={fetchOrders} title="Yenile"
+          <button onClick={() => fetchOrders(activeStoreId)} title="Yenile"
             className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
             style={{ background: c.hover, border: `1px solid ${c.border}` }}>
             <RefreshCw className="w-4 h-4" style={{ color: c.textMuted }} />

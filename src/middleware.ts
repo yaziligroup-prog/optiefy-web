@@ -1,21 +1,35 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Platform alan adları — bunlar dışındaki her hostname custom mağaza domainiydi
+// Ana platform alan adları — bu hostname'lerde panel + landing çalışır
 const SAAS_HOSTNAMES = [
   "localhost",
   "optiefy.com",
   "www.optiefy.com",
 ];
 
+// Optiefy ücretsiz subdomain suffix'i
+const FREE_SUBDOMAIN_SUFFIX = ".optiefy.com";
+
 export async function middleware(request: NextRequest) {
   const host     = request.headers.get("host") ?? "";
   const hostname = host.split(":")[0];
   const pathname = request.nextUrl.pathname;
 
-  // ── 1. Custom domain routing ──────────────────────────────────────────────
-  // optiefy.com / localhost / *.vercel.app / *.localhost dışındaki her istek
-  // → maskelenmiş mağaza vitrini olarak render et (adres çubuğu değişmez)
+  // ── 1a. Wildcard subdomain: *.optiefy.com → mağaza vitrini ───────────────
+  // Örn: papatyadunyam.optiefy.com → /store/papatyadunyam.optiefy.com
+  // DB'de custom_domain kolonu "papatyadunyam.optiefy.com" olarak saklanır
+  if (
+    hostname.endsWith(FREE_SUBDOMAIN_SUFFIX) &&
+    !SAAS_HOSTNAMES.includes(hostname)
+  ) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/store/${hostname}${pathname === "/" ? "" : pathname}`;
+    return NextResponse.rewrite(url);
+  }
+
+  // ── 1b. Tam custom domain: kendi alan adı ile mağaza ─────────────────────
+  // Örn: vivinth.com → /store/vivinth.com
   const isSaasDomain =
     SAAS_HOSTNAMES.includes(hostname) ||
     hostname.endsWith(".vercel.app") ||
