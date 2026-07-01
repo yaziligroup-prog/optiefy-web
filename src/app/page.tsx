@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles, Store, Tag, ArrowRight, Sun, Moon, Check,
-  ShieldCheck, Globe, Zap, ChevronLeft, Plus, Minus, Palette, Search,
+  ShieldCheck, Globe, Zap, ChevronLeft, ChevronDown, Menu, X, Plus, Minus, Palette, Search,
 } from "lucide-react";
 import OptiefyIcon from "@/components/OptiefyIcon";
 import dynamic from "next/dynamic";
@@ -15,6 +15,8 @@ import { blobUrlToBase64 } from "@/utils/supabase";
 import { THEMES, type ThemeId } from "@/types/theme";
 import { createClient } from "@/utils/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import { L, D, type CP } from "@/lib/theme";
+import { ToolsDropdownPanel } from "@/components/ToolsMenu";
 
 const LoadingScreen = dynamic(() => import("@/components/LoadingScreen"), { ssr: false });
 const MobilePreview  = dynamic(() => import("@/components/MobilePreview"),  { ssr: false });
@@ -36,52 +38,6 @@ type GenerateResult = {
   color_palette?: { primary: string; secondary: string } | null;
 };
 
-// ─── Palettes ─────────────────────────────────────────────────────────────────
-
-const L = {
-  bg:           "#FFFFFF",
-  bgSoft:       "#F7F7F5",
-  bgCard:       "#FFFFFF",
-  text:         "#1A1A1A",
-  textMuted:    "#6B7280",
-  textSubtle:   "#9CA3AF",
-  border:       "#E5E5E5",
-  headerBg:     "rgba(255,255,255,0.97)",
-  accent:       "#7C3AED",
-  accentSoft:   "#F3F0FF",
-  accentGlow:   "rgba(124,58,237,0.08)",
-  cardShadow:      "0 1px 2px rgba(0,0,0,0.04)",
-  cardShadowHover: "0 6px 24px rgba(0,0,0,0.08)",
-  highlightCardBorder: "#7C3AED",
-  inputBg:      "#F3F3F1",
-  ctaBg:        "#111111",
-  ctaText:      "#FFFFFF",
-  sectionLabel: "#EA580C",
-};
-
-const D = {
-  bg:           "#0A0A0A",
-  bgSoft:       "#111111",
-  bgCard:       "#1C1C1C",
-  text:         "#F5F5F4",
-  textMuted:    "#9CA3AF",
-  textSubtle:   "#6B7280",
-  border:       "rgba(255,255,255,0.08)",
-  headerBg:     "rgba(10,10,10,0.97)",
-  accent:       "#A855F7",
-  accentSoft:   "rgba(168,85,247,0.10)",
-  accentGlow:   "rgba(168,85,247,0.20)",
-  cardShadow:      "0 1px 3px rgba(0,0,0,0.5)",
-  cardShadowHover: "0 8px 32px rgba(0,0,0,0.6)",
-  highlightCardBorder: "#9333EA",
-  inputBg:      "rgba(255,255,255,0.05)",
-  ctaBg:        "#F5F5F4",
-  ctaText:      "#111111",
-  sectionLabel: "#FB923C",
-};
-
-type CP = typeof L;
-
 // ─── Static data ──────────────────────────────────────────────────────────────
 
 const TONE_CHIPS = [
@@ -91,15 +47,6 @@ const TONE_CHIPS = [
   { label: "Profesyonel & Güvenilir", emoji: "🏆" },
   { label: "Minimal & Modern",        emoji: "◻️" },
   { label: "Eğlenceli & Yaratıcı",   emoji: "🎨" },
-];
-
-const CATEGORIES = [
-  { title: "Moda & Giyim",      desc: "Giyim, çanta, ayakkabı ve aksesuar" },
-  { title: "Sağlık & Güzellik", desc: "Kozmetik, cilt bakımı ve wellness ürünleri" },
-  { title: "El Sanatları",      desc: "El yapımı ve özgün tasarım ürünler" },
-  { title: "Yiyecek & İçecek",  desc: "Özel üretim organik ve artisan gıda" },
-  { title: "Ev & Dekorasyon",   desc: "Tekstil, yaşam alanı ve dekorasyon" },
-  { title: "Elektronik",        desc: "Teknoloji, aksesuar ve dijital ürünler" },
 ];
 
 const FEATURES = [
@@ -753,6 +700,8 @@ export default function Home() {
 
   const [isDark,      setIsDark]      = useState(false);
   const [scrolled,    setScrolled]    = useState(false);
+  const [toolsOpen,   setToolsOpen]   = useState(false);
+  const [mobileOpen,  setMobileOpen]  = useState(false);
   const [appState,    setAppState]    = useState<AppState>("landing");
   const [isYearly,    setIsYearly]    = useState(false);
   const [openFeature, setOpenFeature] = useState<number | null>(0);
@@ -906,16 +855,6 @@ export default function Home() {
     }
   }, [user, router]);
 
-  const handleCategoryClick = (title: string) => {
-    const data: StoreFormData = { photoBase64: null, photoPreviewUrl: null, description: title, price: "", currency: "TRY", domain: "" };
-    try { sessionStorage.setItem("optiefy_store_data", JSON.stringify(data)); } catch { /* */ }
-    if (user) {
-      router.push("/build");
-    } else {
-      router.push("/login?from=builder");
-    }
-  };
-
   const handleToneContinue = () => {
     setBrandTone(selectedToneChip ?? customToneInput.trim());
     setAppState("form");
@@ -981,6 +920,29 @@ export default function Home() {
                       {label}
                     </button>
                   ))}
+
+                  <div className="relative">
+                    <button
+                      onClick={() => setToolsOpen((o) => !o)}
+                      className="flex items-center gap-1 text-sm hover:opacity-60 transition-opacity"
+                      style={{ color: c.textMuted, fontFamily: bodyFont }}
+                    >
+                      Araçlar
+                      <ChevronDown className="w-3.5 h-3.5" style={{ transform: toolsOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s ease" }} />
+                    </button>
+                    <AnimatePresence>
+                      {toolsOpen && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setToolsOpen(false)} />
+                          <ToolsDropdownPanel c={c} isDark={isDark} bodyFont={bodyFont} />
+                        </>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  <Link href="/blog" className="text-sm hover:opacity-60 transition-opacity" style={{ color: c.textMuted, fontFamily: bodyFont }}>
+                    Blog
+                  </Link>
                 </nav>
               )}
 
@@ -995,6 +957,17 @@ export default function Home() {
                     </motion.div>
                   </AnimatePresence>
                 </motion.button>
+
+                {appState === "landing" && (
+                  <button
+                    onClick={() => setMobileOpen((o) => !o)}
+                    className="md:hidden w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{ ...tr, background: isDark ? "rgba(255,255,255,0.06)" : "#F0F0EE", border: `1px solid ${c.border}` }}
+                    aria-label="Menü"
+                  >
+                    {mobileOpen ? <X className="w-4 h-4" style={{ color: c.text }} /> : <Menu className="w-4 h-4" style={{ color: c.text }} />}
+                  </button>
+                )}
 
                 {appState === "landing" ? (
                   user ? (
@@ -1038,6 +1011,36 @@ export default function Home() {
                 )}
               </div>
             </div>
+
+            {/* Mobile menu */}
+            <AnimatePresence>
+              {appState === "landing" && mobileOpen && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="md:hidden overflow-hidden"
+                  style={{ borderTop: `1px solid ${c.border}`, background: c.bg }}
+                >
+                  <div className="px-6 py-4 flex flex-col gap-1">
+                    <button onClick={() => { setMobileOpen(false); scrollTo(featuresRef); }} className="py-2.5 text-sm font-medium text-left" style={{ color: c.text, fontFamily: bodyFont }}>
+                      Özellikler
+                    </button>
+                    <button onClick={() => { setMobileOpen(false); scrollTo(pricingRef); }} className="py-2.5 text-sm font-medium text-left" style={{ color: c.text, fontFamily: bodyFont }}>
+                      Fiyatlandırma
+                    </button>
+                    <p className="pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: c.textSubtle, fontFamily: bodyFont }}>Araçlar</p>
+                    <Link href="/araclar/domain-sorgulama" onClick={() => setMobileOpen(false)} className="py-2 text-sm font-medium" style={{ color: c.text, fontFamily: bodyFont }}>
+                      Domain Sorgulama & Kayıt
+                    </Link>
+                    <span className="py-2 text-sm opacity-50" style={{ color: c.textMuted, fontFamily: bodyFont }}>Logo Oluşturucu · Yakında</span>
+                    <span className="py-2 text-sm opacity-50" style={{ color: c.textMuted, fontFamily: bodyFont }}>SEO Analiz Aracı · Yakında</span>
+                    <Link href="/blog" onClick={() => setMobileOpen(false)} className="py-2.5 text-sm font-medium border-t mt-1 pt-3" style={{ color: c.text, fontFamily: bodyFont, borderColor: c.border }}>
+                      Blog
+                    </Link>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.header>
         )}
       </AnimatePresence>
@@ -1098,44 +1101,6 @@ export default function Home() {
               </div>
             </section>
 
-            {/* ─── CATEGORIES ───────────────────────────────────────────────── */}
-            <section className="pb-20 px-6" style={{ ...tr, background: c.bg }}>
-              <div className="max-w-5xl mx-auto">
-                <motion.h2
-                  initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-                  className="text-xl font-semibold mb-6"
-                  style={{ fontFamily: bodyFont, color: c.text, ...tr }}
-                >
-                  İşletmenize özel
-                </motion.h2>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                  {CATEGORIES.map(({ title, desc }, i) => (
-                    <motion.button
-                      key={title}
-                      initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-                      transition={{ delay: i * 0.055 }}
-                      whileHover={{ backgroundColor: isDark ? "rgba(255,255,255,0.045)" : "#F5F5F3" }}
-                      onClick={() => handleCategoryClick(title)}
-                      className="flex items-center justify-between gap-4 p-5 rounded-xl text-left"
-                      style={{ ...tr, background: c.bgCard, border: `1px solid ${c.border}` }}
-                    >
-                      <div>
-                        <p className="text-sm font-semibold mb-0.5" style={{ color: c.text, fontFamily: bodyFont, ...tr }}>{title}</p>
-                        <p className="text-xs leading-relaxed" style={{ color: c.textMuted, fontFamily: bodyFont, ...tr }}>{desc}</p>
-                      </div>
-                      <div
-                        className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                        style={{ ...tr, background: isDark ? "rgba(255,255,255,0.07)" : "#EBEBEB" }}
-                      >
-                        <ArrowRight className="w-3.5 h-3.5" style={{ color: c.textSubtle }} />
-                      </div>
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
-            </section>
-
             {/* ─── MID CTA ("All-in-one platform") ─────────────────────────── */}
             <section className="py-20 px-6" style={{ ...tr, background: c.bgSoft }}>
               <div className="max-w-5xl mx-auto">
@@ -1171,7 +1136,7 @@ export default function Home() {
             </section>
 
             {/* ─── FEATURES SPLIT ───────────────────────────────────────────── */}
-            <section ref={featuresRef} className="py-20 px-6" style={{ ...tr, background: c.bg }}>
+            <section id="ozellikler" ref={featuresRef} className="py-20 px-6" style={{ ...tr, background: c.bg, scrollMarginTop: "80px" }}>
               <div className="max-w-5xl mx-auto">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-start">
 
@@ -1392,7 +1357,7 @@ export default function Home() {
             </section>
 
             {/* ─── PRICING ──────────────────────────────────────────────────── */}
-            <section ref={pricingRef} className="py-20 px-6" style={{ ...tr, background: c.bgSoft }}>
+            <section id="fiyatlandirma" ref={pricingRef} className="py-20 px-6" style={{ ...tr, background: c.bgSoft, scrollMarginTop: "80px" }}>
               <div className="max-w-5xl mx-auto">
                 <div className="mb-10">
                   <p className="text-sm font-semibold mb-4" style={{ color: c.sectionLabel, fontFamily: bodyFont }}>Şeffaf fiyatlandırma</p>
