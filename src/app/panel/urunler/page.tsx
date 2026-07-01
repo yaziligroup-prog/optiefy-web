@@ -13,6 +13,7 @@ import type { Store } from "@/types/store";
 import {
   usePanelTheme, PANEL_DISPLAY_FONT, PANEL_BODY_FONT, type PanelPalette,
 } from "../_lib/theme";
+import { useActiveStore } from "../_lib/storeContext";
 import ProductEditorDrawer from "../_components/ProductEditorDrawer";
 import Toast from "@/components/Toast";
 
@@ -31,6 +32,14 @@ function slugify(name: string): string {
 export default function UrunlerPage() {
   const { c, isDark } = usePanelTheme();
 
+  // ── Aktif mağaza context'ten gelir — izolasyon burada ──
+  const {
+    stores: allStores, activeStore,
+    refreshStores: refreshCtx, loading: ctxLoading,
+  } = useActiveStore();
+
+  // Katalog yalnızca aktif mağazanın kaydını (+ kardeş mağazaları) listeler.
+  // Mevcut modelde her "store" zaten bir ürün; aktif seçim varsa sadece onu göster.
   const [stores,       setStores]       = useState<Store[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
@@ -48,23 +57,26 @@ export default function UrunlerPage() {
   const [search,       setSearch]       = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
-  // ── Fetch via API route (RLS bypass ile güvenli) ──
+  // ── Veri kaynağı: context'teki tüm mağazalar (user_id izolasyonu /api/stores'da) ──
   const fetchStores = useCallback(async (silent = false) => {
     if (!silent) {
       if (!storesReady.current) setLoading(true);
       else setRefreshing(true);
     }
-    try {
-      const res = await fetch("/api/stores", { cache: "no-store" });
-      if (res.ok) {
-        const data = await res.json() as Store[];
-        setStores(data);
-        storesReady.current = true;
-      }
-    } catch { /* silent */ }
+    await refreshCtx(true);
+    storesReady.current = true;
     setLoading(false);
     setRefreshing(false);
-  }, []);
+  }, [refreshCtx]);
+
+  // Context ilk yüklendiğinde veya allStores değiştiğinde yerel state'i güncelle
+  useEffect(() => {
+    if (!ctxLoading) {
+      setStores(allStores);
+      storesReady.current = true;
+      setLoading(false);
+    }
+  }, [allStores, ctxLoading]);
 
   useEffect(() => { fetchStores(); }, [fetchStores]);
 
@@ -83,10 +95,11 @@ export default function UrunlerPage() {
       setToastMsg("Durum güncellenirken hata oluştu.");
     } else {
       setToastMsg(next === "active" ? "Ürün yayına alındı ✓" : "Ürün taslağa alındı");
+      await refreshCtx(true);
     }
     setShowToast(true);
     setTogglingId(null);
-  }, []);
+  }, [refreshCtx]);
 
   // ── Silme ──
   const handleDelete = useCallback(async (store: Store) => {
@@ -94,13 +107,14 @@ export default function UrunlerPage() {
     const res = await fetch(`/api/stores?id=${store.id}`, { method: "DELETE" });
     if (res.ok) {
       setStores((prev) => prev.filter((s) => s.id !== store.id));
+      await refreshCtx(true);
       setToastMsg("Ürün silindi.");
     } else {
       setToastMsg("Silerken bir hata oluştu.");
     }
     setShowToast(true);
     setDeletingId(null);
-  }, []);
+  }, [refreshCtx]);
 
   const handleCopy = useCallback((store: Store) => {
     const slug = slugify(store.store_name);
@@ -113,12 +127,12 @@ export default function UrunlerPage() {
   }, []);
 
   const handleProductCreated = useCallback(async (storeId: string) => {
-    await fetchStores(true);
+    await refreshCtx(true);
     setHighlightId(storeId);
     setToastMsg("Yeni ürün kataloğa eklendi ✓");
     setShowToast(true);
     setTimeout(() => setHighlightId(null), 2600);
-  }, [fetchStores]);
+  }, [refreshCtx]);
 
   const handleProductSaved = useCallback((storeId: string, patch: Partial<Store>) => {
     setStores((prev) => prev.map((s) => s.id === storeId ? { ...s, ...patch } : s));
@@ -168,12 +182,12 @@ export default function UrunlerPage() {
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38 }}>
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2.5 mb-1">
+            <div className="flex items-center gap-2.5 mb-1 flex-wrap">
               <h1 style={{
                 fontFamily: PANEL_DISPLAY_FONT, fontSize: "clamp(1.8rem,3.5vw,2.6rem)",
                 fontWeight: 400, lineHeight: 1.1, letterSpacing: "-0.015em", color: c.text,
               }}>
-                Ürünler
+                Ürün Kataloğu
               </h1>
               <AnimatePresence>
                 {refreshing && (
@@ -187,10 +201,27 @@ export default function UrunlerPage() {
             </div>
             <p className="text-sm" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
               {loading && !storesReady.current
-                ? "Ürünler yükleniyor…"
-                : `${stores.length} ürün · ${activeCount} yayında`}
+                ? "Yükleniyor…"
+                : `${stores.length} mağaza · ${activeCount} yayında`}
             </p>
           </div>
+          {/* Aktif mağaza izolasyon chip'i */}
+          {activeStore && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl self-start"
+              style={{ background: c.cardBg, border: `1px solid ${c.border}` }}>
+              <span className="w-2 h-2 rounded-full" style={{
+                background: activeStore.status === "active" ? "#22C55E" : "#F59E0B"
+              }} />
+              <span className="text-xs font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
+                {activeStore.store_name}
+              </span>
+              {activeStore.custom_domain && (
+                <span className="text-[11px]" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+                  · {activeStore.custom_domain}
+                </span>
+              )}
+            </div>
+          )}
 
           <motion.button
             onClick={() => setAddOpen(true)}

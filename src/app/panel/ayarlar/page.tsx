@@ -13,7 +13,7 @@ import type { User as SupaUser } from "@supabase/supabase-js";
 import {
   usePanelTheme, PANEL_BODY_FONT, PANEL_DISPLAY_FONT, type PanelPalette,
 } from "../_lib/theme";
-import type { Store as StoreType } from "@/types/store";
+import { useActiveStore } from "../_lib/storeContext";
 
 // ─── Types ───────────────────────────────────────────────────────────────────────
 
@@ -224,26 +224,17 @@ function PasswordSection({ c }: { c: PanelPalette }) {
 // ─── StoresSection ────────────────────────────────────────────────────────────────
 
 function StoresSection({ c }: { c: PanelPalette }) {
-  const [stores,  setStores]  = useState<StoreType[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Context'ten okur — API route + user_id izolasyonu zaten var
+  const { stores, loading, refreshStores } = useActiveStore();
+  const fetchStores = useCallback(() => refreshStores(false), [refreshStores]);
   const tr: React.CSSProperties = { transition: "background-color 0.3s, color 0.3s, border-color 0.3s" };
 
   const STATUS_COLOR: Record<string, string> = {
-    active: "#059669", inactive: "#6B7280", draft: "#D97706", suspended: "#DC2626",
+    active: "#059669", inactive: "#6B7280", draft: "#D97706", suspended: "#DC2626", pending: "#D97706",
   };
   const STATUS_LABEL: Record<string, string> = {
-    active: "Aktif", inactive: "Pasif", draft: "Taslak", suspended: "Askıya Alındı",
+    active: "Yayında", inactive: "Pasif", draft: "Taslak", suspended: "Askıya Alındı", pending: "Taslak",
   };
-
-  const fetchStores = useCallback(async () => {
-    setLoading(true);
-    const supabase = createClient();
-    const { data } = await supabase.from("stores").select("*").order("created_at", { ascending: false });
-    if (data) setStores(data as StoreType[]);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { fetchStores(); }, [fetchStores]);
 
   return (
     <section className="rounded-2xl p-6 space-y-4" style={sectionCard(c)}>
@@ -323,61 +314,42 @@ function StoresSection({ c }: { c: PanelPalette }) {
 // ─── ShippingSection ──────────────────────────────────────────────────────────────
 
 function ShippingSection({ c }: { c: PanelPalette }) {
-  const [stores,    setStores]    = useState<StoreType[]>([]);
-  const [storeId,   setStoreId]   = useState<string>("");
+  // Context'ten aktif mağaza — user_id izolasyonu API'da
+  const { activeStore, stores, refreshStores } = useActiveStore();
+  const storeId = activeStore?.id ?? stores[0]?.id ?? "";
   const [fee,       setFee]       = useState<string>("");
   const [threshold, setThreshold] = useState<string>("");
   const [saving,    setSaving]    = useState(false);
   const [fb,        setFb]        = useState<FeedbackState>(null);
   const tr: React.CSSProperties = { transition: "background-color 0.3s, color 0.3s, border-color 0.3s" };
 
-  const fetchStores = useCallback(async () => {
-    const supabase = createClient();
-    const { data } = await supabase.from("stores").select("*").order("created_at", { ascending: false });
-    if (data && data.length > 0) {
-      const list = data as StoreType[];
-      setStores(list);
-      setStoreId(list[0].id);
-      setFee(String(list[0].shipping_fee ?? 0));
-      setThreshold(list[0].free_shipping_threshold != null ? String(list[0].free_shipping_threshold) : "");
-    }
-  }, []);
-
-  useEffect(() => { fetchStores(); }, [fetchStores]);
-
+  // Aktif mağaza değişince kargo bilgilerini senkronize et
   useEffect(() => {
-    const store = stores.find((s) => s.id === storeId);
-    if (!store) return;
-    setFee(String(store.shipping_fee ?? 0));
-    setThreshold(store.free_shipping_threshold != null ? String(store.free_shipping_threshold) : "");
-  }, [storeId, stores]);
+    const store = activeStore ?? stores[0];
+    if (store) {
+      setFee(String(store.shipping_fee ?? 0));
+      setThreshold(store.free_shipping_threshold != null ? String(store.free_shipping_threshold) : "");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStore?.id, stores]);
 
   const handleSave = async () => {
     if (!storeId) return;
     setSaving(true);
     setFb(null);
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("stores")
-      .update({
-        shipping_fee:           parseFloat(fee) || 0,
+    const res = await fetch("/api/stores", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: storeId,
+        shipping_fee:            parseFloat(fee) || 0,
         free_shipping_threshold: threshold.trim() !== "" ? parseFloat(threshold) : null,
-      })
-      .eq("id", storeId);
-    if (error) setFb({ type: "error", message: error.message });
+      }),
+    });
+    if (!res.ok) setFb({ type: "error", message: "Kargo ayarları kaydedilemedi." });
     else {
       setFb({ type: "success", message: "Kargo ayarları kaydedildi." });
-      setStores((prev) =>
-        prev.map((s) =>
-          s.id === storeId
-            ? {
-                ...s,
-                shipping_fee:           parseFloat(fee) || 0,
-                free_shipping_threshold: threshold.trim() !== "" ? parseFloat(threshold) : null,
-              }
-            : s,
-        ),
-      );
+      await refreshStores(true);
     }
     setSaving(false);
   };
@@ -395,19 +367,13 @@ function ShippingSection({ c }: { c: PanelPalette }) {
         <p className="text-sm" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Henüz mağaza yok.</p>
       ) : (
         <>
-          {stores.length > 1 && (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium block" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Mağaza</label>
-              <select
-                value={storeId}
-                onChange={(e) => setStoreId(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none max-w-sm"
-                style={{ ...tr, background: c.inputBg, border: `1px solid ${c.border}`, color: c.text, fontFamily: PANEL_BODY_FONT }}
-              >
-                {stores.map((s) => (
-                  <option key={s.id} value={s.id}>{s.store_name}</option>
-                ))}
-              </select>
+          {/* Aktif mağaza chip */}
+          {activeStore && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+              style={{ background: c.cardBgSoft ?? c.hover, border: `1px solid ${c.borderSoft}` }}>
+              <span className="text-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>Mağaza:</span>
+              <span className="text-xs font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>{activeStore.store_name}</span>
+              <span className="text-[10px]" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>(Soldaki seçiciden değiştirebilirsiniz)</span>
             </div>
           )}
 
@@ -466,74 +432,70 @@ function ShippingSection({ c }: { c: PanelPalette }) {
 // ─── ThemeSection ────────────────────────────────────────────────────────────────
 
 function ThemeSection({ c }: { c: PanelPalette }) {
-  const [stores,    setStores]    = useState<StoreType[]>([]);
-  const [storeId,   setStoreId]   = useState("");
-  const [theme,     setTheme]     = useState<ThemeId>("artisan");
-  const [saving,    setSaving]    = useState(false);
-  const [saved,     setSaved]     = useState(false);
-  const tr: React.CSSProperties = { transition: "background-color 0.3s, color 0.3s, border-color 0.3s" };
+  // Aktif mağaza context'ten gelir — sidebar seçimiyle senkron
+  const { activeStore, refreshStores } = useActiveStore();
+  const [theme,  setTheme]  = useState<ThemeId>("artisan");
+  const [saving, setSaving] = useState(false);
+  const [saved,  setSaved]  = useState(false);
 
+  // Aktif mağaza değiştiğinde tema state'ini senkronize et
   useEffect(() => {
-    const supabase = createClient();
-    supabase.from("stores").select("id,store_name,theme").order("created_at", { ascending: false })
-      .then(({ data }) => {
-        if (data && data.length > 0) {
-          const list = data as StoreType[];
-          setStores(list);
-          setStoreId(list[0].id);
-          setTheme((list[0].theme as ThemeId) ?? "artisan");
-        }
-      });
-  }, []);
-
-  useEffect(() => {
-    const s = stores.find((s) => s.id === storeId);
-    if (s) setTheme((s.theme as ThemeId) ?? "artisan");
-  }, [storeId, stores]);
+    if (activeStore) setTheme((activeStore.theme as ThemeId) ?? "artisan");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStore?.id, activeStore?.theme]);
 
   const handleSave = async () => {
-    if (!storeId) return;
+    if (!activeStore) return;
     setSaving(true);
     const res = await fetch("/api/stores", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: storeId, theme }),
+      body: JSON.stringify({ id: activeStore.id, theme }),
     });
     setSaving(false);
     if (res.ok) {
-      setStores((prev) => prev.map((s) => s.id === storeId ? { ...s, theme } : s));
+      await refreshStores(true);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     }
   };
 
+  const THEME_DESC: Record<ThemeId, string> = {
+    luxury:    "Minimalist · Premium",
+    artisan:   "Sıcak · El işi",
+    modern:    "Modern · Temiz",
+    dynamic:   "Enerjik · Genç",
+    corporate: "Kurumsal · Profesyonel",
+  };
+
   return (
     <section className="rounded-2xl p-6 space-y-5" style={sectionCard(c)}>
-      <div className="flex items-center gap-2.5">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "#EC489915", border: "1px solid #EC489925" }}>
-          <Palette className="w-4 h-4" style={{ color: "#EC4899" }} />
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "#EC489915", border: "1px solid #EC489925" }}>
+            <Palette className="w-4 h-4" style={{ color: "#EC4899" }} />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Mağaza Tasarımı</h2>
+            <p className="text-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+              {activeStore
+                ? <>Düzenlenen mağaza: <span className="font-semibold" style={{ color: c.text }}>{activeStore.store_name}</span></>
+                : "Soldan bir mağaza seçin"}
+            </p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-base font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Mağaza Tasarımı</h2>
-          <p className="text-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>Mağazanızın görsel temasını tek tıkla değiştirin</p>
-        </div>
+        {activeStore?.custom_domain && (
+          <span className="text-xs font-mono px-2.5 py-1 rounded-lg flex items-center gap-1.5"
+            style={{ background: "rgba(34,197,94,0.1)", color: "#16A34A", border: "1px solid rgba(34,197,94,0.25)" }}>
+            <Globe className="w-3 h-3" /> {activeStore.custom_domain}
+          </span>
+        )}
       </div>
 
-      {stores.length === 0 ? (
+      {!activeStore ? (
         <p className="text-sm" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Henüz mağaza yok.</p>
       ) : (
         <>
-          {stores.length > 1 && (
-            <div>
-              <label className="text-xs font-medium block mb-1.5" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Mağaza</label>
-              <select value={storeId} onChange={(e) => setStoreId(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none max-w-sm"
-                style={{ ...tr, background: c.inputBg, border: `1px solid ${c.border}`, color: c.text, fontFamily: PANEL_BODY_FONT }}>
-                {stores.map((s) => <option key={s.id} value={s.id}>{s.store_name}</option>)}
-              </select>
-            </div>
-          )}
-
           <div>
             <label className="text-xs font-medium block mb-3" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Tema Seçin</label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
@@ -544,21 +506,16 @@ function ThemeSection({ c }: { c: PanelPalette }) {
                   <button key={tid} onClick={() => setTheme(tid)}
                     className="flex flex-col items-start p-3.5 rounded-xl text-left transition-all"
                     style={{
-                      background: sel ? `${th.accentColor}14` : c.cardBgSoft ?? c.hover,
+                      background: sel ? `${th.accentColor}14` : (c.cardBgSoft ?? c.hover),
                       border: sel ? `2px solid ${th.accentColor}` : `1px solid ${c.borderSoft}`,
                     }}>
-                    {/* Tema renk paleti önizleme */}
                     <div className="flex gap-1 mb-2.5">
                       {[th.accentColor, th.primaryBtn.startsWith("linear") ? th.accentColor : th.primaryBtn, th.titleColor].map((color, i) => (
                         <span key={i} className="w-4 h-4 rounded-full flex-shrink-0" style={{ background: color }} />
                       ))}
                     </div>
-                    <p className="text-xs font-bold leading-tight" style={{ color: sel ? th.accentColor : c.text, fontFamily: PANEL_BODY_FONT }}>
-                      {th.name}
-                    </p>
-                    <p className="text-[10px] mt-0.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-                      {tid === "luxury" ? "Minimalist · Premium" : tid === "artisan" ? "Sıcak · El işi" : tid === "modern" ? "Modern · Temiz" : tid === "dynamic" ? "Enerjik · Genç" : "Kurumsal · Profesyonel"}
-                    </p>
+                    <p className="text-xs font-bold leading-tight" style={{ color: sel ? th.accentColor : c.text, fontFamily: PANEL_BODY_FONT }}>{th.name}</p>
+                    <p className="text-[10px] mt-0.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>{THEME_DESC[tid]}</p>
                   </button>
                 );
               })}
@@ -569,7 +526,7 @@ function ThemeSection({ c }: { c: PanelPalette }) {
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
             style={{ background: saved ? "#05966920" : c.ctaBg, color: saved ? "#059669" : c.ctaText, fontFamily: PANEL_BODY_FONT, border: saved ? "1px solid #05966940" : "none", transition: "all 0.3s" }}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCircle className="w-4 h-4" /> : <Palette className="w-4 h-4" />}
-            {saving ? "Kaydediliyor…" : saved ? "Tema güncellendi ✓" : "Temayı Kaydet"}
+            {saving ? "Kaydediliyor…" : saved ? "Tema güncellendi ✓" : `"${THEMES[theme].name}" Temasını Kaydet`}
           </button>
         </>
       )}
@@ -642,28 +599,27 @@ function DnsRow({ record, c }: { record: DnsRecord; c: PanelPalette }) {
 }
 
 function DomainSection({ c }: { c: PanelPalette }) {
-  const [stores,       setStores]       = useState<StoreType[]>([]);
-  const [storeId,      setStoreId]      = useState("");
-  const [domain,       setDomain]       = useState("");
-  const [loading,      setLoading]      = useState(false);
-  const [checking,     setChecking]     = useState(false);
-  const [result,       setResult]       = useState<DomainResult | null>(null);
-  const [fb,           setFb]           = useState<FeedbackState>(null);
+  // Context'ten user'ın mağazaları — API izolasyonu zaten sağlandı
+  const { stores, activeStore } = useActiveStore();
+  const [storeId,   setStoreId]  = useState("");
+  const [domain,    setDomain]   = useState("");
+  const [loading,   setLoading]  = useState(false);
+  const [checking,  setChecking] = useState(false);
+  const [result,    setResult]   = useState<DomainResult | null>(null);
+  const [fb,        setFb]       = useState<FeedbackState>(null);
   const tr: React.CSSProperties = { transition: "background-color 0.3s, color 0.3s, border-color 0.3s" };
 
+  // Aktif mağaza değişince domain alanını senkronize et
   useEffect(() => {
-    const supabase = createClient();
-    supabase.from("stores").select("id,store_name,custom_domain").order("created_at", { ascending: false })
-      .then(({ data }) => {
-        if (data) {
-          setStores(data as StoreType[]);
-          if (data[0]) {
-            setStoreId(data[0].id);
-            if (data[0].custom_domain) setDomain(data[0].custom_domain);
-          }
-        }
-      });
-  }, []);
+    if (activeStore) {
+      setStoreId(activeStore.id);
+      setDomain(activeStore.custom_domain ?? "");
+    } else if (stores.length > 0) {
+      setStoreId(stores[0].id);
+      setDomain(stores[0].custom_domain ?? "");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStore?.id, stores]);
 
   const handleConnect = async () => {
     if (!domain.trim() || !storeId) {

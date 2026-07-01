@@ -10,13 +10,16 @@ import {
   LayoutDashboard, ShoppingBag, Package, Users, Store, Settings,
   Search, Bell, Sun, Moon, ChevronDown, Menu,
   LogOut, User as UserIcon, CreditCard, ArrowUpRight,
+  Check, Globe, Plus,
 } from "lucide-react";
 import OptiefyIcon from "@/components/OptiefyIcon";
 import {
   PanelThemeProvider, usePanelTheme, PANEL_BODY_FONT,
 } from "./_lib/theme";
+import { StoreProvider, useActiveStore } from "./_lib/storeContext";
+import { THEMES, type ThemeId } from "@/types/theme";
 
-// ─── Navigation model ───────────────────────────────────────────────────────────
+// ─── Navigation ──────────────────────────────────────────────────────────────
 
 const NAV = [
   { href: "/panel",            label: "Ana Panel",        icon: LayoutDashboard },
@@ -31,15 +34,128 @@ const DASHBOARD_ROUTES: string[] = NAV.map((n) => n.href);
 
 const spring = { type: "spring" as const, stiffness: 420, damping: 36 };
 
-// ─── Bildirim verileri ────────────────────────────────────────────────────────
+// ─── Bildirim verileri ───────────────────────────────────────────────────────
 
 const MOCK_NOTIFS = [
-  { id: "1", title: "Yeni sipariş alındı",   body: "vivinth.com mağazanızdan 1 sipariş geldi.",  time: "2 dk önce",  read: false },
-  { id: "2", title: "Ürün yayına alındı",    body: "Metal Kase ürününüz aktif olarak yayında.",  time: "1 sa önce",  read: true  },
-  { id: "3", title: "Analitik raporu hazır", body: "Bu haftaki trafik özeti panelde sizi bekliyor.", time: "3 sa önce", read: true },
+  { id: "1", title: "Yeni sipariş alındı",   body: "Mağazanızdan 1 yeni sipariş geldi.",            time: "2 dk önce",  read: false },
+  { id: "2", title: "Ürün yayına alındı",    body: "Aktif ürününüz canlıda yayında.",               time: "1 sa önce",  read: true  },
+  { id: "3", title: "Analitik raporu hazır", body: "Bu haftaki trafik özeti panelde sizi bekliyor.", time: "3 sa önce",  read: true  },
 ];
 
-// ─── Shell (chrome) ─────────────────────────────────────────────────────────────
+// ─── Store Selector ──────────────────────────────────────────────────────────
+
+function StoreSelector() {
+  const { c, isDark } = usePanelTheme();
+  const { stores, activeStore, setActiveStoreId, loading } = useActiveStore();
+  const [open, setOpen] = useState(false);
+  const tr: React.CSSProperties = { transition: "background-color 0.3s, color 0.3s, border-color 0.3s" };
+
+  if (loading || stores.length === 0) {
+    return (
+      <div className="mx-3 my-2 h-12 rounded-xl animate-pulse" style={{ background: c.hover, border: `1px solid ${c.border}` }} />
+    );
+  }
+
+  const theme = (activeStore?.theme ?? "artisan") as ThemeId;
+  const themeColor = THEMES[theme]?.accentColor ?? "#7C3AED";
+  const isLive = activeStore?.status === "active";
+
+  return (
+    <div className="relative px-3 py-2">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left"
+        style={{ ...tr, background: open ? c.hover : c.cardBg, border: `1px solid ${c.border}` }}
+      >
+        {/* Renk dot */}
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{ background: `${themeColor}20`, border: `1px solid ${themeColor}40` }}>
+          <span className="w-2.5 h-2.5 rounded-full" style={{ background: themeColor }} />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold leading-tight truncate" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
+            {activeStore?.store_name ?? "Mağaza"}
+          </p>
+          <p className="text-[10px] leading-tight mt-0.5 truncate flex items-center gap-1" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+            {isLive
+              ? <><span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: "#22C55E" }} /> Yayında</>
+              : <><span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: "#F59E0B" }} /> Taslak</>
+            }
+            {activeStore?.custom_domain && (
+              <><span style={{ color: c.border }}>·</span> {activeStore.custom_domain}</>
+            )}
+          </p>
+        </div>
+
+        <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 transition-transform" style={{ color: c.textSubtle, transform: open ? "rotate(180deg)" : "none" }} />
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <>
+            <div className="fixed inset-0 z-[45]" onClick={() => setOpen(false)} />
+            <motion.div
+              initial={{ opacity: 0, y: -6, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.97 }}
+              transition={{ duration: 0.14 }}
+              className="absolute left-3 right-3 mt-1 rounded-xl overflow-hidden z-[46]"
+              style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadowMd }}
+            >
+              <div className="px-3 py-2" style={{ borderBottom: `1px solid ${c.borderSoft}` }}>
+                <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+                  Mağazalarım · {stores.length}
+                </p>
+              </div>
+
+              <div className="py-1 max-h-52 overflow-y-auto">
+                {stores.map((s) => {
+                  const sid = (s.theme ?? "artisan") as ThemeId;
+                  const sc  = THEMES[sid]?.accentColor ?? "#7C3AED";
+                  const sel = s.id === activeStore?.id;
+                  return (
+                    <button key={s.id}
+                      onClick={() => { setActiveStoreId(s.id); setOpen(false); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all"
+                      style={{ background: sel ? (isDark ? "rgba(124,58,237,0.1)" : "#FAF5FF") : "transparent" }}
+                    >
+                      <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+                        style={{ background: `${sc}20`, border: `1px solid ${sc}40` }}>
+                        <span className="w-2 h-2 rounded-full" style={{ background: sc }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold truncate" style={{ color: sel ? "#7C3AED" : c.text, fontFamily: PANEL_BODY_FONT }}>
+                          {s.store_name}
+                        </p>
+                        {s.custom_domain && (
+                          <p className="text-[10px] truncate flex items-center gap-1" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+                            <Globe className="w-2.5 h-2.5" /> {s.custom_domain}
+                          </p>
+                        )}
+                      </div>
+                      {sel && <Check className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "#7C3AED" }} />}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="px-3 py-2.5" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
+                <Link href="/panel/urunler" onClick={() => setOpen(false)}
+                  className="flex items-center gap-2 text-[11px] font-semibold w-full py-1.5 rounded-lg px-2"
+                  style={{ color: "#7C3AED", fontFamily: PANEL_BODY_FONT, background: isDark ? "rgba(124,58,237,0.08)" : "#F5F0FF" }}>
+                  <Plus className="w-3.5 h-3.5" /> Yeni Mağaza Ekle
+                </Link>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Shell ───────────────────────────────────────────────────────────────────
 
 function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -48,14 +164,14 @@ function Shell({ children }: { children: React.ReactNode }) {
   const [mobileOpen,  setMobileOpen]  = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifOpen,   setNotifOpen]   = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+  const [user,        setUser]        = useState<User | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
 
-  const displayName = user?.user_metadata?.full_name as string | undefined
+  const displayName = (user?.user_metadata?.full_name as string | undefined)
     ?? user?.email?.split("@")[0]
     ?? "Kullanıcı";
   const avatarInitial = displayName[0]?.toUpperCase() ?? "K";
@@ -66,7 +182,6 @@ function Shell({ children }: { children: React.ReactNode }) {
     router.push("/");
   };
 
-  // Mağaza vitrin önizlemesi (/panel/{uuid}) → chrome'suz, tam ekran render et
   const isStorefront = pathname.startsWith("/panel/") && !DASHBOARD_ROUTES.includes(pathname);
   if (isStorefront) return <>{children}</>;
 
@@ -84,24 +199,27 @@ function Shell({ children }: { children: React.ReactNode }) {
           style={{ background: c.accentSoft, color: c.accentText, ...tr }}>Pro</span>
       </div>
 
+      {/* ── Mağaza Seçici ── */}
+      <div style={{ borderBottom: `1px solid ${c.borderSoft}` }}>
+        <StoreSelector />
+      </div>
+
       {/* Nav */}
-      <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>Menü</p>
         {NAV.map((item) => {
           const active = pathname === item.href;
           const Icon = item.icon;
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setMobileOpen(false)}
+            <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}
               className="relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium"
-              style={{ color: active ? c.navActiveTxt : c.textMuted, fontFamily: PANEL_BODY_FONT }}
-            >
+              style={{ color: active ? c.navActiveTxt : c.textMuted, fontFamily: PANEL_BODY_FONT }}>
               {active && (
-                <motion.span layoutId="nav-pill" className="absolute inset-0 rounded-xl" style={{ background: c.navActive }} transition={spring} />
+                <motion.span layoutId="nav-pill" className="absolute inset-0 rounded-xl"
+                  style={{ background: c.navActive }} transition={spring} />
               )}
-              <Icon className="w-[18px] h-[18px] relative z-10 flex-shrink-0" style={{ color: active ? c.navActiveTxt : c.textSubtle }} />
+              <Icon className="w-[18px] h-[18px] relative z-10 flex-shrink-0"
+                style={{ color: active ? c.navActiveTxt : c.textSubtle }} />
               <span className="relative z-10">{item.label}</span>
             </Link>
           );
@@ -125,42 +243,38 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ ...tr, background: c.appBg, minHeight: "100vh", fontFamily: PANEL_BODY_FONT, overflowX: "hidden", maxWidth: "100vw" }}>
 
-      {/* ─── Desktop sidebar (fixed) ─── */}
+      {/* Desktop sidebar */}
       <aside className="hidden lg:flex fixed top-0 left-0 bottom-0 w-64 z-40 flex-col"
         style={{ ...tr, background: c.sidebarBg, borderRight: `1px solid ${c.border}` }}>
         {SidebarBody}
       </aside>
 
-      {/* ─── Mobile sidebar (drawer) ─── */}
+      {/* Mobile sidebar */}
       <AnimatePresence>
         {mobileOpen && (
           <>
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setMobileOpen(false)}
-              className="lg:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
-            />
+              className="lg:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" />
             <motion.aside
               initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }} transition={spring}
               className="lg:hidden fixed top-0 left-0 bottom-0 w-64 z-50 flex flex-col"
-              style={{ background: c.sidebarBg, borderRight: `1px solid ${c.border}` }}
-            >
+              style={{ background: c.sidebarBg, borderRight: `1px solid ${c.border}` }}>
               {SidebarBody}
             </motion.aside>
           </>
         )}
       </AnimatePresence>
 
-      {/* ─── Main column ─── */}
+      {/* Main column */}
       <div className="lg:pl-64 min-w-0 overflow-x-hidden">
 
         {/* Topbar */}
-        <header
-          className="sticky top-0 z-30 h-16 flex items-center gap-3 px-4 sm:px-6"
-          style={{ ...tr, background: c.topbarBg, backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)", borderBottom: `1px solid ${c.border}` }}
-        >
-          {/* Mobile hamburger */}
-          <button onClick={() => setMobileOpen(true)} className="lg:hidden w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+        <header className="sticky top-0 z-30 h-16 flex items-center gap-3 px-4 sm:px-6"
+          style={{ ...tr, background: c.topbarBg, backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)", borderBottom: `1px solid ${c.border}` }}>
+
+          <button onClick={() => setMobileOpen(true)}
+            className="lg:hidden w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
             style={{ background: c.hover, color: c.textMuted }}>
             <Menu className="w-4.5 h-4.5" />
           </button>
@@ -169,22 +283,22 @@ function Shell({ children }: { children: React.ReactNode }) {
           <div className="flex-1 max-w-md">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: c.textSubtle }} />
-              <input
-                type="text"
-                placeholder="Sipariş veya müşteri ara..."
+              <input type="text" placeholder="Sipariş veya müşteri ara..."
                 className="w-full pl-9 pr-3 py-2 rounded-xl text-sm focus:outline-none"
-                style={{ ...tr, background: c.inputBg, border: `1px solid ${c.border}`, color: c.text, fontFamily: PANEL_BODY_FONT }}
-              />
+                style={{ ...tr, background: c.inputBg, border: `1px solid ${c.border}`, color: c.text, fontFamily: PANEL_BODY_FONT }} />
             </div>
           </div>
 
           <div className="flex items-center gap-2 ml-auto">
+
             {/* Dark toggle */}
             <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} onClick={toggle}
               className="w-9 h-9 rounded-lg flex items-center justify-center"
               style={{ ...tr, background: c.hover, border: `1px solid ${c.border}` }}>
               <AnimatePresence mode="wait">
-                <motion.div key={isDark ? "sun" : "moon"} initial={{ rotate: -20, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 20, opacity: 0 }} transition={{ duration: 0.18 }}>
+                <motion.div key={isDark ? "sun" : "moon"}
+                  initial={{ rotate: -20, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 20, opacity: 0 }}
+                  transition={{ duration: 0.18 }}>
                   {isDark ? <Sun className="w-4 h-4" style={{ color: "#FB923C" }} /> : <Moon className="w-4 h-4" style={{ color: c.textMuted }} />}
                 </motion.div>
               </AnimatePresence>
@@ -194,10 +308,11 @@ function Shell({ children }: { children: React.ReactNode }) {
             <div className="relative">
               <button onClick={() => { setNotifOpen((o) => !o); setProfileOpen(false); }}
                 className="w-9 h-9 rounded-lg flex items-center justify-center relative"
-                style={{ ...tr, background: notifOpen ? c.accentSoft : c.hover, border: `1px solid ${notifOpen ? c.border : c.border}` }}>
+                style={{ ...tr, background: notifOpen ? c.accentSoft : c.hover, border: `1px solid ${c.border}` }}>
                 <Bell className="w-4 h-4" style={{ color: c.textMuted }} />
                 {MOCK_NOTIFS.some((n) => !n.read) && (
-                  <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full" style={{ background: "#EF4444", boxShadow: `0 0 0 2px ${c.topbarBg}` }} />
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full"
+                    style={{ background: "#EF4444", boxShadow: `0 0 0 2px ${c.topbarBg}` }} />
                 )}
               </button>
 
@@ -206,17 +321,13 @@ function Shell({ children }: { children: React.ReactNode }) {
                   <>
                     <div className="fixed inset-0 z-30" onClick={() => setNotifOpen(false)} />
                     <motion.div
-                      initial={{ opacity: 0, y: -8, scale: 0.97 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -8, scale: 0.97 }}
-                      transition={{ duration: 0.16 }}
+                      initial={{ opacity: 0, y: -8, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -8, scale: 0.97 }} transition={{ duration: 0.16 }}
                       className="absolute right-0 mt-2 w-80 rounded-2xl overflow-hidden z-40"
-                      style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadowMd }}
-                    >
+                      style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadowMd }}>
                       <div className="px-4 py-3.5 flex items-center justify-between" style={{ borderBottom: `1px solid ${c.borderSoft}` }}>
                         <p className="text-sm font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Bildirimler</p>
-                        <span className="text-[11px] px-2 py-0.5 rounded-full font-bold"
-                          style={{ background: "#7C3AED20", color: "#7C3AED" }}>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full font-bold" style={{ background: "#7C3AED20", color: "#7C3AED" }}>
                           {MOCK_NOTIFS.filter((n) => !n.read).length} yeni
                         </span>
                       </div>
@@ -227,8 +338,7 @@ function Shell({ children }: { children: React.ReactNode }) {
                               borderBottom: i < MOCK_NOTIFS.length - 1 ? `1px solid ${c.borderSoft}` : "none",
                               background: n.read ? "transparent" : (isDark ? "rgba(124,58,237,0.06)" : "#FAF5FF"),
                             }}>
-                            <div className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5"
-                              style={{ background: n.read ? c.borderSoft : "#7C3AED" }} />
+                            <div className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5" style={{ background: n.read ? c.borderSoft : "#7C3AED" }} />
                             <div className="flex-1 min-w-0">
                               <p className="text-xs font-semibold leading-tight" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>{n.title}</p>
                               <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>{n.body}</p>
@@ -238,8 +348,7 @@ function Shell({ children }: { children: React.ReactNode }) {
                         ))}
                       </div>
                       <div className="px-4 py-2.5 text-center" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
-                        <button onClick={() => setNotifOpen(false)}
-                          className="text-xs font-semibold hover:opacity-70"
+                        <button onClick={() => setNotifOpen(false)} className="text-xs font-semibold hover:opacity-70"
                           style={{ color: "#7C3AED", fontFamily: PANEL_BODY_FONT }}>
                           Tümünü okundu işaretle
                         </button>
@@ -252,8 +361,11 @@ function Shell({ children }: { children: React.ReactNode }) {
 
             {/* Profile dropdown */}
             <div className="relative">
-              <button onClick={() => setProfileOpen((o) => !o)} className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-lg" style={{ ...tr, background: c.hover, border: `1px solid ${c.border}` }}>
-                <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ background: "linear-gradient(135deg,#7C3AED,#EC4899)" }}>{avatarInitial}</div>
+              <button onClick={() => setProfileOpen((o) => !o)}
+                className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-lg"
+                style={{ ...tr, background: c.hover, border: `1px solid ${c.border}` }}>
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                  style={{ background: "linear-gradient(135deg,#7C3AED,#EC4899)" }}>{avatarInitial}</div>
                 <span className="hidden sm:block text-sm font-medium" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>{displayName}</span>
                 <ChevronDown className="w-3.5 h-3.5" style={{ color: c.textSubtle }} />
               </button>
@@ -263,10 +375,10 @@ function Shell({ children }: { children: React.ReactNode }) {
                   <>
                     <div className="fixed inset-0 z-30" onClick={() => setProfileOpen(false)} />
                     <motion.div
-                      initial={{ opacity: 0, y: -8, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: 0.97 }} transition={{ duration: 0.16 }}
+                      initial={{ opacity: 0, y: -8, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -8, scale: 0.97 }} transition={{ duration: 0.16 }}
                       className="absolute right-0 mt-2 w-52 rounded-xl overflow-hidden z-40 py-1"
-                      style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadowMd }}
-                    >
+                      style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadowMd }}>
                       <div className="px-4 py-3" style={{ borderBottom: `1px solid ${c.borderSoft}` }}>
                         <p className="text-sm font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>{displayName}</p>
                         <p className="text-xs" style={{ color: c.textSubtle }}>{user?.email ?? ""}</p>
@@ -276,16 +388,15 @@ function Shell({ children }: { children: React.ReactNode }) {
                         { icon: CreditCard, label: "Faturalandırma" },
                         { icon: Settings,   label: "Hesap Ayarları" },
                       ].map(({ icon: Icon, label }) => (
-                        <button key={label} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:opacity-70 transition-opacity" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
+                        <button key={label} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:opacity-70 transition-opacity"
+                          style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
                           <Icon className="w-4 h-4" style={{ color: c.textSubtle }} /> {label}
                         </button>
                       ))}
                       <div style={{ borderTop: `1px solid ${c.borderSoft}` }}>
-                        <button
-                          onClick={handleSignOut}
+                        <button onClick={handleSignOut}
                           className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:opacity-70 transition-opacity"
-                          style={{ color: "#EF4444", fontFamily: PANEL_BODY_FONT }}
-                        >
+                          style={{ color: "#EF4444", fontFamily: PANEL_BODY_FONT }}>
                           <LogOut className="w-4 h-4" /> Çıkış Yap
                         </button>
                       </div>
@@ -306,10 +417,14 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
+// ─── Root layout export ──────────────────────────────────────────────────────
+
 export default function PanelLayout({ children }: { children: React.ReactNode }) {
   return (
     <PanelThemeProvider>
-      <Shell>{children}</Shell>
+      <StoreProvider>
+        <Shell>{children}</Shell>
+      </StoreProvider>
     </PanelThemeProvider>
   );
 }
