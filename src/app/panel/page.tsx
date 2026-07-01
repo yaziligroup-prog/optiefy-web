@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   CircleDollarSign, Clock, ShoppingBag, CheckCircle2,
   ArrowUpRight, AlertTriangle, Sparkles, Zap, MoreHorizontal, RefreshCw, Inbox, BarChart3,
+  Calendar, ChevronDown,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import type { OrderWithItems, OrderStatus } from "@/types/order";
@@ -15,11 +16,191 @@ import {
 
 import type { RealAnalytics } from "./_components/AnalyticsCharts";
 
-// recharts client-only — SSR ölçüm sorunlarını önlemek için dinamik import
 const AnalyticsCharts = dynamic(() => import("./_components/AnalyticsCharts"), {
   ssr: false,
   loading: () => null,
 });
+
+// ─── Tarih aralığı ──────────────────────────────────────────────────────────────
+
+type PeriodKey = "today" | "yesterday" | "7d" | "14d" | "custom";
+
+const PERIODS: { key: PeriodKey; label: string }[] = [
+  { key: "today",     label: "Bugün" },
+  { key: "yesterday", label: "Dün" },
+  { key: "7d",        label: "Son 7 Gün" },
+  { key: "14d",       label: "Son 14 Gün" },
+  { key: "custom",    label: "Özel" },
+];
+
+function getPeriodDates(
+  period: PeriodKey,
+  customFrom = "",
+  customTo   = "",
+): { from: string; to: string } {
+  const now   = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  switch (period) {
+    case "today":
+      return { from: today.toISOString(), to: now.toISOString() };
+    case "yesterday": {
+      const yest    = new Date(today); yest.setDate(today.getDate() - 1);
+      const yestEnd = new Date(today.getTime() - 1);
+      return { from: yest.toISOString(), to: yestEnd.toISOString() };
+    }
+    case "7d":
+      return { from: new Date(now.getTime() - 7 * 86_400_000).toISOString(), to: now.toISOString() };
+    case "14d":
+      return { from: new Date(now.getTime() - 14 * 86_400_000).toISOString(), to: now.toISOString() };
+    case "custom": {
+      const from = customFrom
+        ? new Date(customFrom).toISOString()
+        : new Date(now.getTime() - 7 * 86_400_000).toISOString();
+      const to = customTo
+        ? new Date(customTo + "T23:59:59").toISOString()
+        : now.toISOString();
+      return { from, to };
+    }
+  }
+}
+
+// ─── DateRangePicker bileşeni ────────────────────────────────────────────────────
+
+function DateRangePicker({
+  period, setPeriod, customFrom, setCustomFrom, customTo, setCustomTo,
+  onApply, c,
+}: {
+  period: PeriodKey;
+  setPeriod: (p: PeriodKey) => void;
+  customFrom: string;
+  setCustomFrom: (v: string) => void;
+  customTo: string;
+  setCustomTo: (v: string) => void;
+  onApply: () => void;
+  c: PanelPalette;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedLabel = PERIODS.find((p) => p.key === period)?.label ?? "Son 14 Gün";
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all"
+        style={{
+          background: c.hover,
+          border: `1px solid ${c.border}`,
+          color: c.textMuted,
+          fontFamily: PANEL_BODY_FONT,
+        }}
+      >
+        <Calendar className="w-3.5 h-3.5" />
+        {selectedLabel}
+        <ChevronDown className="w-3.5 h-3.5" style={{ opacity: 0.6 }} />
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <>
+            {/* Backdrop */}
+            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+
+            {/* Dropdown */}
+            <motion.div
+              initial={{ opacity: 0, y: 6, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.97 }}
+              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+              className="absolute right-0 top-full mt-2 z-50 min-w-[220px] rounded-2xl p-2 shadow-2xl"
+              style={{
+                background:     c.cardBg,
+                border:         `1px solid ${c.border}`,
+                backdropFilter: "blur(20px)",
+              }}
+            >
+              {PERIODS.map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => {
+                    setPeriod(p.key);
+                    if (p.key !== "custom") { setOpen(false); onApply(); }
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm text-left transition-all"
+                  style={{
+                    background: period === p.key ? `#7C3AED18` : "transparent",
+                    color:      period === p.key ? "#7C3AED" : c.text,
+                    fontFamily: PANEL_BODY_FONT,
+                    fontWeight: period === p.key ? 600 : 400,
+                  }}
+                >
+                  {p.key === "custom" && <Calendar className="w-3.5 h-3.5 flex-shrink-0" />}
+                  {p.label}
+                  {period === p.key && p.key !== "custom" && (
+                    <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: "#7C3AED" }} />
+                  )}
+                </button>
+              ))}
+
+              {/* Özel tarih aralığı */}
+              <AnimatePresence>
+                {period === "custom" && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mt-1 mx-1 p-3 rounded-xl space-y-2.5" style={{ background: c.hover }}>
+                      <div>
+                        <p className="text-[11px] font-semibold mb-1.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>Başlangıç</p>
+                        <input
+                          type="date"
+                          value={customFrom}
+                          onChange={(e) => setCustomFrom(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg text-sm outline-none"
+                          style={{
+                            background: c.cardBg,
+                            border:     `1px solid ${c.border}`,
+                            color:      c.text,
+                            fontFamily: PANEL_BODY_FONT,
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold mb-1.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>Bitiş</p>
+                        <input
+                          type="date"
+                          value={customTo}
+                          onChange={(e) => setCustomTo(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg text-sm outline-none"
+                          style={{
+                            background: c.cardBg,
+                            border:     `1px solid ${c.border}`,
+                            color:      c.text,
+                            fontFamily: PANEL_BODY_FONT,
+                          }}
+                        />
+                      </div>
+                      <button
+                        onClick={() => { onApply(); setOpen(false); }}
+                        disabled={!customFrom || !customTo}
+                        className="w-full py-2 rounded-lg text-sm font-bold transition-opacity disabled:opacity-40"
+                        style={{ background: "#7C3AED", color: "#fff", fontFamily: PANEL_BODY_FONT }}
+                      >
+                        Uygula
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -88,10 +269,24 @@ function StatCard({
 
 export default function DashboardPage() {
   const { c, isDark } = usePanelTheme();
-  const [orders, setOrders]   = useState<OrderWithItems[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [today, setToday]     = useState("");
-  const [analytics, setAnalytics] = useState<RealAnalytics | null>(null);
+  const [orders, setOrders]             = useState<OrderWithItems[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [analyticsLoading, setALoading] = useState(true);
+  const [today, setToday]               = useState("");
+  const [analytics, setAnalytics]       = useState<RealAnalytics | null>(null);
+
+  // Tarih aralığı seçici
+  const [period, setPeriod]           = useState<PeriodKey>("14d");
+  const [customFrom, setCustomFrom]   = useState("");
+  const [customTo, setCustomTo]       = useState("");
+  // Uygulanan aralık (Apply tıklanınca veya preset seçilince güncellenir)
+  const [appliedRange, setAppliedRange] = useState<{ from: string; to: string }>(
+    () => getPeriodDates("14d"),
+  );
+
+  const applyCurrentPeriod = useCallback(() => {
+    setAppliedRange(getPeriodDates(period, customFrom, customTo));
+  }, [period, customFrom, customTo]);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -105,31 +300,46 @@ export default function DashboardPage() {
     setLoading(false);
   }, []);
 
-  // Gerçek trafik analitiği — /api/analytics; başarısızsa null (grafik simülasyona düşer)
-  const fetchAnalytics = useCallback(async () => {
+  const fetchAnalytics = useCallback(async (from: string, to: string) => {
+    setALoading(true);
     try {
-      const res = await fetch("/api/analytics", { cache: "no-store" });
+      const qs  = new URLSearchParams({ from, to });
+      const res = await fetch(`/api/analytics?${qs}`, { cache: "no-store" });
       if (!res.ok) { setAnalytics(null); return; }
       setAnalytics((await res.json()) as RealAnalytics);
     } catch { setAnalytics(null); }
+    finally { setALoading(false); }
   }, []);
 
+  // İlk yükleme
   useEffect(() => {
     setToday(new Date().toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }));
     fetchOrders();
-    fetchAnalytics();
-    // Canlı trafik için 30sn'de bir analitiği tazele
-    const id = setInterval(fetchAnalytics, 30_000);
+  }, [fetchOrders]);
+
+  // Seçilen tarih aralığı değişince analitiği çek + 30sn yenile
+  useEffect(() => {
+    fetchAnalytics(appliedRange.from, appliedRange.to);
+    const id = setInterval(() => fetchAnalytics(appliedRange.from, appliedRange.to), 30_000);
     return () => clearInterval(id);
-  }, [fetchOrders, fetchAnalytics]);
+  }, [fetchAnalytics, appliedRange]);
+
+  // period preset seçilince hemen uygula
+  const handleSelectPeriod = useCallback((p: PeriodKey) => {
+    setPeriod(p);
+    if (p !== "custom") {
+      const range = getPeriodDates(p);
+      setAppliedRange(range);
+    }
+  }, []);
 
   // ── Gerçek istatistikler ──
-  const active = orders.filter((o) => o.status !== "cancelled");
-  const revenue = active.reduce((s, o) => s + Number(o.total ?? 0), 0);
-  const pendingCount = orders.filter((o) => o.status === "preparing" || o.status === "pending").length;
+  const active         = orders.filter((o) => o.status !== "cancelled");
+  const revenue        = active.reduce((s, o) => s + Number(o.total ?? 0), 0);
+  const pendingCount   = orders.filter((o) => o.status === "preparing" || o.status === "pending").length;
   const deliveredCount = orders.filter((o) => o.status === "delivered").length;
-  const todayCount = orders.filter((o) => isToday(o.created_at)).length;
-  const deliveredPct = orders.length ? Math.round((deliveredCount / orders.length) * 100) : 0;
+  const todayCount     = orders.filter((o) => isToday(o.created_at)).length;
+  const deliveredPct   = orders.length ? Math.round((deliveredCount / orders.length) * 100) : 0;
 
   const STATS = [
     { label: "Toplam Ciro",         value: fmtTRY(revenue),        sub: `${active.length} geçerli sipariş`, icon: CircleDollarSign, color: "#22C55E" },
@@ -139,6 +349,13 @@ export default function DashboardPage() {
   ];
 
   const recent = orders.slice(0, 6);
+
+  // Seçili dönem etiketi (grafik altlığı için)
+  const periodLabel = useMemo(() => {
+    if (period === "custom" && customFrom && customTo)
+      return `${customFrom} – ${customTo}`;
+    return PERIODS.find((p) => p.key === period)?.label ?? "";
+  }, [period, customFrom, customTo]);
 
   return (
     <div className="max-w-6xl mx-auto space-y-7">
@@ -172,22 +389,51 @@ export default function DashboardPage() {
 
       {/* ── Analitik & Grafikler ── */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.24 }}>
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg,#7C3AED,#2563EB)" }}>
-            <BarChart3 className="w-3.5 h-3.5 text-white" />
+        <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg,#7C3AED,#2563EB)" }}>
+              <BarChart3 className="w-3.5 h-3.5 text-white" />
+            </div>
+            <h2 className="text-base font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Mağaza Analitiği</h2>
+            <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: c.hover, color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+              {periodLabel}
+            </span>
           </div>
-          <h2 className="text-base font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Mağaza Analitiği</h2>
-          <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: c.hover, color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-            Gerçek zamanlı
-          </span>
+
+          {/* Tarih Seçici */}
+          <DateRangePicker
+            period={period}
+            setPeriod={handleSelectPeriod}
+            customFrom={customFrom}
+            setCustomFrom={setCustomFrom}
+            customTo={customTo}
+            setCustomTo={setCustomTo}
+            onApply={applyCurrentPeriod}
+            c={c}
+          />
         </div>
-        {loading ? (
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-            <div className="xl:col-span-2 h-80 rounded-2xl animate-pulse" style={{ background: c.hover }} />
-            <div className="h-80 rounded-2xl animate-pulse" style={{ background: c.hover }} />
+
+        {analyticsLoading ? (
+          <div className="space-y-5">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="h-28 rounded-2xl animate-pulse" style={{ background: c.hover }} />
+              ))}
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+              <div className="xl:col-span-2 h-80 rounded-2xl animate-pulse" style={{ background: c.hover }} />
+              <div className="h-80 rounded-2xl animate-pulse" style={{ background: c.hover }} />
+            </div>
+            <div className="h-64 rounded-2xl animate-pulse" style={{ background: c.hover }} />
           </div>
         ) : (
-          <AnalyticsCharts orders={orders} c={c} analytics={analytics} />
+          <AnalyticsCharts
+            orders={orders}
+            c={c}
+            analytics={analytics}
+            fromDate={appliedRange.from}
+            toDate={appliedRange.to}
+          />
         )}
       </motion.div>
 

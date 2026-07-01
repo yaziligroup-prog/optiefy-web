@@ -186,10 +186,21 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
     fetch("/api/track", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ storeId: store.id }),
+      body: JSON.stringify({ storeId: store.id, eventType: "view" }),
       keepalive: true,
     }).catch(() => { /* takip hatası sessiz */ });
   }, [previewMode, store.id]);
+
+  // Dönüşüm hunisi etkinlik izleyici (cart/checkout — her tetiklemede kaydedilir)
+  const trackEvent = (eventType: "add_to_cart" | "checkout") => {
+    if (previewMode || !store.id) return;
+    fetch("/api/track", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ storeId: store.id, eventType }),
+      keepalive: true,
+    }).catch(() => {});
+  };
 
   const t      = THEMES[themeId];
   const layout = getLayout(themeId);
@@ -263,8 +274,8 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
   const scrollToBuy = () => buyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   const heroImage   = images[0] ?? null;
   const buildItem   = () => ({ id: store.id, name: productName, price: productPrice, image: heroImage });
-  const handleAddToCart = () => { addItem(buildItem()); openDrawer(); };
-  const handleBuyNow    = () => { addItem(buildItem()); openCheckout(); };
+  const handleAddToCart = () => { addItem(buildItem()); openDrawer(); trackEvent("add_to_cart"); };
+  const handleBuyNow    = () => { addItem(buildItem()); openCheckout(); trackEvent("checkout"); };
 
   // ─── Per-layout font tokens ────────────────────────────────────────────────────
   const luxurySerif  = '"DM Serif Display", Georgia, serif';

@@ -8,27 +8,33 @@ import {
 } from "recharts";
 import {
   Users, TrendingUp, Radio, ShoppingBag, ArrowUpRight, ArrowDownRight,
+  TrendingDown,
 } from "lucide-react";
 import type { OrderWithItems } from "@/types/order";
 import { PANEL_BODY_FONT, type PanelPalette } from "../_lib/theme";
 
-// ─── Deterministik simüle ziyaretçi (render'lar arası sabit) ────────────────────
+// ─── Deterministik simüle ziyaretçi ────────────────────────────────────────────
 function seededVisitors(d: Date): number {
   const day = d.getDay();
   const dow = day === 0 || day === 6 ? 1.32 : day === 5 ? 1.18 : 1;
   const seed = d.getFullYear() * 1000 + (d.getMonth() + 1) * 50 + d.getDate();
-  const rand = Math.abs(Math.sin(seed)); // 0..1 deterministik
+  const rand = Math.abs(Math.sin(seed));
   const base = 150 + Math.round(rand * 130);
   return Math.round(base * dow);
 }
 
-// Gerçek analitik yanıtı (/api/analytics)
 export type RealAnalytics = {
   hasData:       boolean;
   days:          { key: string; views: number; visitors: number }[];
   totalViews:    number;
   totalVisitors: number;
   liveVisitors:  number;
+  funnel: {
+    views:     number;
+    addToCart: number;
+    checkout:  number;
+    purchases: number;
+  };
 };
 
 type DayPoint = {
@@ -36,14 +42,22 @@ type DayPoint = {
   orders: number; revenue: number; visitors: number;
 };
 
-function buildSeries(orders: OrderWithItems[], real?: RealAnalytics | null): DayPoint[] {
-  const useReal = !!real?.hasData;
+function buildSeries(
+  orders: OrderWithItems[],
+  real?: RealAnalytics | null,
+  fromDate?: string,
+  toDate?: string,
+): DayPoint[] {
+  const useReal  = !!real?.hasData;
   const realByKey = new Map((real?.days ?? []).map((d) => [d.key, d.views]));
   const days: DayPoint[] = [];
-  const now = new Date();
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(now.getDate() - i);
+
+  const until = toDate   ? new Date(toDate).getTime()   : Date.now();
+  const start = fromDate ? new Date(fromDate).getTime() : until - 14 * 86_400_000;
+  const rangeDays = Math.max(1, Math.ceil((until - start) / 86_400_000));
+
+  for (let i = rangeDays - 1; i >= 0; i--) {
+    const d = new Date(until - i * 86_400_000);
     d.setHours(0, 0, 0, 0);
     const key = d.toISOString().slice(0, 10);
     days.push({
@@ -54,9 +68,12 @@ function buildSeries(orders: OrderWithItems[], real?: RealAnalytics | null): Day
       visitors: useReal ? (realByKey.get(key) ?? 0) : seededVisitors(d),
     });
   }
+
   const idx = new Map(days.map((p, i) => [p.key, i]));
   for (const o of orders) {
     if (o.status === "cancelled") continue;
+    const t = new Date(o.created_at).getTime();
+    if (t < start || t > until) continue;
     const k = new Date(o.created_at).toISOString().slice(0, 10);
     const i = idx.get(k);
     if (i !== undefined) { days[i].orders += 1; days[i].revenue += Number(o.total ?? 0); }
@@ -126,33 +143,185 @@ function ChartTooltip({ active, payload, label, c, suffix }: {
   );
 }
 
+// ─── Dönüşüm Hunisi ──────────────────────────────────────────────────────────────
+const FUNNEL_STEPS = [
+  { key: "views",      label: "Oturumlar",             sub: "Sayfa görüntüleme",    color: "#7C3AED" },
+  { key: "addToCart",  label: "Sepete Ekleme",          sub: "Ürün sepete eklendi",  color: "#2563EB" },
+  { key: "checkout",   label: "Ödeme Adımı",            sub: "Ödemeye yönlendirildi", color: "#0891B2" },
+  { key: "purchases",  label: "Tamamlanan Alışveriş",   sub: "Sipariş oluşturuldu",  color: "#059669" },
+] as const;
+
+type FunnelData = { views: number; addToCart: number; checkout: number; purchases: number };
+
+function ConversionFunnel({ funnel, isReal, c }: { funnel: FunnelData; isReal: boolean; c: PanelPalette }) {
+  const max = Math.max(1, funnel.views);
+  const values: Record<string, number> = {
+    views:     funnel.views,
+    addToCart: funnel.addToCart,
+    checkout:  funnel.checkout,
+    purchases: funnel.purchases,
+  };
+
+  const pct = (n: number, d: number) => d > 0 ? ((n / d) * 100).toFixed(1) : "—";
+
+  const transitions = [
+    { label: `%${pct(funnel.addToCart, funnel.views)} sepete ekledi` },
+    { label: `%${pct(funnel.checkout, funnel.addToCart)} ödemeye geçti` },
+    { label: `%${pct(funnel.purchases, funnel.checkout)} satın tamamladı` },
+  ];
+
+  const noData = !isReal && funnel.views === 0;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
+      className="rounded-2xl p-6"
+      style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadow }}
+    >
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+            style={{ background: "linear-gradient(135deg, #7C3AED, #059669)" }}>
+            <TrendingDown className="w-3.5 h-3.5 text-white" />
+          </div>
+          <h2 className="text-base font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Dönüşüm Hunisi</h2>
+        </div>
+        <span className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5"
+          style={{ background: c.hover, color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
+          {isReal
+            ? <><span className="w-1.5 h-1.5 rounded-full" style={{ background: "#22C55E" }} />Gerçek veri</>
+            : "Örnek veri"}
+        </span>
+      </div>
+      <p className="text-xs mb-6" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+        Ziyaretçiden müşteriye dönüşüm akışı · {isReal ? "Seçili dönem" : "İlk satış etkinliğinde gerçek veriye geçer"}
+      </p>
+
+      {noData ? (
+        <div className="flex flex-col items-center justify-center py-8 gap-3">
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+            style={{ background: c.hover, border: `1px solid ${c.border}` }}>
+            <TrendingDown className="w-5 h-5" style={{ color: c.textSubtle }} />
+          </div>
+          <p className="text-sm font-medium" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Henüz etkinlik verisi yok</p>
+          <p className="text-xs text-center max-w-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+            Vitrininizdeki &quot;Sepete Ekle&quot; ve ödeme butonlarına tıklamalar burada görünecek.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {FUNNEL_STEPS.map((step, i) => {
+            const val = values[step.key] ?? 0;
+            const barPct = Math.max(0, Math.min(100, (val / max) * 100));
+            const isLast = i === FUNNEL_STEPS.length - 1;
+            const nextVal = i < FUNNEL_STEPS.length - 1 ? (values[FUNNEL_STEPS[i + 1].key] ?? 0) : null;
+            const dropPct = nextVal !== null && val > 0 ? (((val - nextVal) / val) * 100).toFixed(1) : null;
+
+            return (
+              <div key={step.key}>
+                {/* Step row */}
+                <div className="flex items-center gap-4 py-3">
+                  {/* Step info */}
+                  <div style={{ minWidth: 160 }}>
+                    <p className="text-sm font-semibold leading-tight" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
+                      {step.label}
+                    </p>
+                    <p className="text-[11px] mt-0.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+                      {step.sub}
+                    </p>
+                  </div>
+
+                  {/* Bar */}
+                  <div className="flex-1 relative h-8 rounded-lg overflow-hidden"
+                    style={{ background: c.hover }}>
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${barPct}%` }}
+                      transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: i * 0.1 }}
+                      className="absolute inset-y-0 left-0 rounded-lg"
+                      style={{ background: `linear-gradient(90deg, ${step.color}cc, ${step.color})` }}
+                    />
+                    <div className="absolute inset-0 flex items-center px-3">
+                      <span className="text-xs font-bold relative z-10"
+                        style={{ color: barPct > 30 ? "rgba(255,255,255,0.92)" : c.text, fontFamily: PANEL_BODY_FONT }}>
+                        {fmtNum(val)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Percentage of top */}
+                  <div style={{ minWidth: 52, textAlign: "right" }}>
+                    <span className="text-sm font-bold" style={{ color: step.color, fontFamily: PANEL_BODY_FONT }}>
+                      {i === 0 ? "100%" : `%${pct(val, funnel.views)}`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Arrow between steps */}
+                {!isLast && (
+                  <div className="flex items-center gap-4 pb-1">
+                    <div style={{ minWidth: 160 }} />
+                    <div className="flex-1 flex items-center gap-2">
+                      <div className="h-px flex-1" style={{ background: c.borderSoft }} />
+                      {dropPct !== null && (
+                        <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full flex-shrink-0"
+                          style={{
+                            background: `${transitions[i] ? "#DC262610" : c.hover}`,
+                            color: c.textMuted,
+                            border: `1px solid ${c.borderSoft}`,
+                            fontFamily: PANEL_BODY_FONT,
+                          }}>
+                          {transitions[i]?.label ?? ""}
+                        </span>
+                      )}
+                      <div className="h-px flex-1" style={{ background: c.borderSoft }} />
+                    </div>
+                    <div style={{ minWidth: 52 }} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
 // ─── Ana bileşen ────────────────────────────────────────────────────────────────
 export default function AnalyticsCharts({
-  orders, c, analytics,
+  orders, c, analytics, fromDate, toDate,
 }: {
-  orders: OrderWithItems[]; c: PanelPalette; analytics?: RealAnalytics | null;
+  orders: OrderWithItems[];
+  c: PanelPalette;
+  analytics?: RealAnalytics | null;
+  fromDate?: string;
+  toDate?: string;
 }) {
   const isReal = !!analytics?.hasData;
-  const series = useMemo(() => buildSeries(orders, analytics), [orders, analytics]);
+  const series = useMemo(
+    () => buildSeries(orders, analytics, fromDate, toDate),
+    [orders, analytics, fromDate, toDate],
+  );
 
   const totals = useMemo(() => {
-    const totalOrders  = series.reduce((s, p) => s + p.orders, 0);
-    const totalRevenue = series.reduce((s, p) => s + p.revenue, 0);
-    // Gerçek modda benzersiz ziyaretçi global (server hesaplar); simülasyonda toplam
-    const totalVisitors = isReal ? (analytics?.totalVisitors ?? 0) : series.reduce((s, p) => s + p.visitors, 0);
-    const conversion    = totalVisitors > 0 ? (totalOrders / totalVisitors) * 100 : 0;
-    // Son 7 gün vs önceki 7 gün trafik trendi
-    const last7  = series.slice(7).reduce((s, p) => s + p.visitors, 0);
-    const prev7  = series.slice(0, 7).reduce((s, p) => s + p.visitors, 0);
+    const totalOrders   = series.reduce((s, p) => s + p.orders, 0);
+    const totalRevenue  = series.reduce((s, p) => s + p.revenue, 0);
+    const totalVisitors = isReal
+      ? (analytics?.totalVisitors ?? 0)
+      : series.reduce((s, p) => s + p.visitors, 0);
+    const conversion = totalVisitors > 0 ? (totalOrders / totalVisitors) * 100 : 0;
+    const last7  = series.slice(Math.max(0, series.length - 7)).reduce((s, p) => s + p.visitors, 0);
+    const prev7  = series.slice(Math.max(0, series.length - 14), Math.max(0, series.length - 7)).reduce((s, p) => s + p.visitors, 0);
     const visTrend = prev7 > 0 ? ((last7 - prev7) / prev7) * 100 : 0;
     return { totalVisitors, totalOrders, totalRevenue, conversion, visTrend };
   }, [series, isReal, analytics]);
 
-  // Canlı trafik — gerçek modda server'dan (poll ile tazelenir), simülasyonda dalgalanma
-  const liveBase = Math.max(3, Math.round(series[series.length - 1].visitors / 42));
+  // Simüle canlı trafik dalgalanması
+  const liveBase = Math.max(3, Math.round((series[series.length - 1]?.visitors ?? 0) / 42));
   const [simLive, setSimLive] = useState(liveBase);
   useEffect(() => {
-    if (isReal) return; // gerçek modda dalgalanma yok
+    if (isReal) return;
     const id = setInterval(() => {
       setSimLive(() => Math.max(1, liveBase + Math.round((Math.random() - 0.5) * 4)));
     }, 3200);
@@ -160,9 +329,21 @@ export default function AnalyticsCharts({
   }, [liveBase, isReal]);
   const live = isReal ? (analytics?.liveVisitors ?? 0) : simLive;
 
-  const axisStyle = { fontSize: 11, fontFamily: PANEL_BODY_FONT, fill: c.textSubtle };
-  const maxOrders = Math.max(1, ...series.map((p) => p.orders));
+  // Dönüşüm hunisi verisi
+  const funnel = useMemo<{ views: number; addToCart: number; checkout: number; purchases: number }>(() => {
+    if (isReal && analytics?.funnel) return analytics.funnel;
+    // Simüle huni
+    const v  = totals.totalVisitors;
+    const ac = Math.round(v * 0.14);
+    const co = Math.round(ac * 0.45);
+    const pu = totals.totalOrders;
+    return { views: v, addToCart: ac, checkout: co, purchases: pu };
+  }, [isReal, analytics, totals]);
+
+  const axisStyle    = { fontSize: 11, fontFamily: PANEL_BODY_FONT, fill: c.textSubtle };
+  const maxOrders    = Math.max(1, ...series.map((p) => p.orders));
   const trafficSuffix = isReal ? " görüntüleme" : " ziyaretçi";
+  const xInterval    = series.length <= 7 ? 0 : series.length <= 14 ? 2 : 4;
 
   return (
     <div className="space-y-5">
@@ -177,7 +358,7 @@ export default function AnalyticsCharts({
         <MetricCard index={2} c={c} label="Canlı Trafik" value={`${live} kişi`}
           live icon={Radio} color="#EC4899" />
         <MetricCard index={3} c={c} label="Sipariş Geçmişi" value={fmtNum(totals.totalOrders)}
-          trend="14 gün" trendUp icon={ShoppingBag} color="#2563EB" />
+          trend={`${series.length} gün`} trendUp icon={ShoppingBag} color="#2563EB" />
       </div>
 
       {/* Grafikler */}
@@ -193,8 +374,8 @@ export default function AnalyticsCharts({
             <span className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5"
               style={{ background: c.hover, color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
               {isReal
-                ? <><span className="w-1.5 h-1.5 rounded-full" style={{ background: "#22C55E" }} /> Gerçek veri</>
-                : "Son 14 gün"}
+                ? <><span className="w-1.5 h-1.5 rounded-full" style={{ background: "#22C55E" }} />Gerçek veri</>
+                : `Son ${series.length} gün`}
             </span>
           </div>
           <p className="text-xs mb-5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
@@ -210,7 +391,7 @@ export default function AnalyticsCharts({
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={c.borderSoft} />
-                <XAxis dataKey="short" tick={axisStyle} axisLine={false} tickLine={false} interval={2} />
+                <XAxis dataKey="short" tick={axisStyle} axisLine={false} tickLine={false} interval={xInterval} />
                 <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={44} allowDecimals={false} />
                 <Tooltip content={<ChartTooltip c={c} suffix={trafficSuffix} />} cursor={{ stroke: c.border }} />
                 <Area type="monotone" dataKey="visitors" stroke="#7C3AED" strokeWidth={2.5}
@@ -220,7 +401,7 @@ export default function AnalyticsCharts({
           </div>
         </motion.div>
 
-        {/* Günlük sipariş — bar chart (gerçek veri) */}
+        {/* Günlük sipariş — bar chart */}
         <motion.div
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.34 }}
           className="rounded-2xl p-5"
@@ -236,7 +417,7 @@ export default function AnalyticsCharts({
             <ResponsiveContainer>
               <BarChart data={series} margin={{ top: 4, right: 4, left: -22, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={c.borderSoft} />
-                <XAxis dataKey="short" tick={axisStyle} axisLine={false} tickLine={false} interval={3} />
+                <XAxis dataKey="short" tick={axisStyle} axisLine={false} tickLine={false} interval={xInterval} />
                 <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
                 <Tooltip content={<ChartTooltip c={c} suffix=" sipariş" />} cursor={{ fill: c.hover }} />
                 <Bar dataKey="orders" radius={[4, 4, 0, 0]} maxBarSize={22}>
@@ -249,6 +430,9 @@ export default function AnalyticsCharts({
           </div>
         </motion.div>
       </div>
+
+      {/* Dönüşüm Hunisi */}
+      <ConversionFunnel funnel={funnel} isReal={isReal} c={c} />
     </div>
   );
 }

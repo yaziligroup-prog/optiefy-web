@@ -1,17 +1,17 @@
 /**
  * POST /api/track
- * Anonim vitrin ziyareti kaydeder. Body: { storeId: string }
+ * Vitrin etkinliği kaydeder. Body: { storeId, eventType? }
  *
- * IP ve user-agent server-side yakalanır. page_views tablosuna anon key ile
- * yazılır (RLS insert politikası anon/authenticated'a izin verir).
- * Hatalar sessizce yutulur — takip asla vitrini bozmamalı.
+ * eventType: 'view' (varsayılan) | 'add_to_cart' | 'checkout'
+ * IP ve user-agent server-side yakalanır. Hatalar sessizce yutulur.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export async function POST(req: NextRequest) {
   try {
-    const { storeId } = (await req.json()) as { storeId?: string };
+    const body = (await req.json()) as { storeId?: string; eventType?: string };
+    const { storeId, eventType = "view" } = body;
     if (!storeId) return NextResponse.json({ ok: false }, { status: 400 });
 
     const fwd = req.headers.get("x-forwarded-for") ?? "";
@@ -31,11 +31,11 @@ export async function POST(req: NextRequest) {
       store_id:   storeId,
       ip_address: ip,
       user_agent: ua,
+      event_type: eventType,
     });
 
     return NextResponse.json({ ok: true });
   } catch {
-    // Sessiz — takip hatası ziyaretçiyi etkilemez
     return NextResponse.json({ ok: false }, { status: 200 });
   }
 }
