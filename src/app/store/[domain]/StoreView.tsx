@@ -525,10 +525,10 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
         /* ── ARTISAN: stacked — full-width image banner then info column ── */
         <section ref={buyRef as React.RefObject<HTMLElement>} className="scroll-mt-24">
 
-          {/* Full-width image — 4:3 oranı, object-contain → ürünün tamamı görünür */}
+          {/* Full-bleed görsel — 16:10, object-cover → çerçevesiz, seamless */}
           <div
             className="relative w-full overflow-hidden"
-            style={{ aspectRatio: "4/3", maxHeight: "min(480px, 90vw)", background: t.galleryBg }}
+            style={{ aspectRatio: "16/10", background: t.bgColor }}
           >
             {images.length > 0 ? (
               <AnimatePresence mode="wait">
@@ -537,8 +537,7 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
                   <FadeImage
                     src={images[activeImg]}
                     alt={productName}
-                    className="absolute inset-0 w-full h-full object-contain"
-                    style={{ padding: "16px" }}
+                    className="absolute inset-0 w-full h-full object-cover object-center"
                     fallback={<ImagePlaceholder theme={t} label={productName} tall />}
                   />
                 </motion.div>
@@ -548,16 +547,17 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
             )}
             {images.length > 1 && (
               <>
+                {/* Apple tarzı frosty nav butonları — açık/koyu görsel üzerinde her ikisinde de görünür */}
                 <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                   onClick={() => setActiveImg((i) => (i - 1 + images.length) % images.length)}
                   className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full flex items-center justify-center"
-                  style={{ background: "rgba(255,255,255,0.88)", backdropFilter: "blur(8px)" }}>
+                  style={{ background: "rgba(255,255,255,0.82)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", boxShadow: "0 2px 12px rgba(0,0,0,0.14)", border: "1px solid rgba(0,0,0,0.07)" }}>
                   <ChevronLeft className="w-4 h-4" style={{ color: t.titleColor }} />
                 </motion.button>
                 <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                   onClick={() => setActiveImg((i) => (i + 1) % images.length)}
                   className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full flex items-center justify-center"
-                  style={{ background: "rgba(255,255,255,0.88)", backdropFilter: "blur(8px)" }}>
+                  style={{ background: "rgba(255,255,255,0.82)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", boxShadow: "0 2px 12px rgba(0,0,0,0.14)", border: "1px solid rgba(0,0,0,0.07)" }}>
                   <ChevronRight className="w-4 h-4" style={{ color: t.titleColor }} />
                 </motion.button>
               </>
@@ -572,16 +572,18 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
                     {activeImg + 1} / {images.length}
                   </span>
                 </div>
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5">
+                {/* Koyu pill içinde nokta göstergeler — beyaz ürün fotoğrafları üzerinde görünür */}
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-full"
+                  style={{ background: "rgba(0,0,0,0.26)", backdropFilter: "blur(8px)" }}>
                   {images.map((_, i) => (
                     <button
                       key={i}
                       onClick={() => setActiveImg(i)}
                       style={{
-                        width:      i === activeImg ? 20 : 6,
-                        height:     6,
+                        width:      i === activeImg ? 18 : 5,
+                        height:     5,
                         borderRadius: 3,
-                        background: i === activeImg ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.35)",
+                        background: i === activeImg ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.40)",
                         transition: "all 0.25s ease",
                       }}
                     />
@@ -591,15 +593,15 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
             )}
           </div>
 
-          {/* Thumbnail strip */}
+          {/* Thumbnail strip — sayfa arka planıyla tam eşleşme */}
           {images.length > 1 && (
-            <div className="flex gap-2 px-6 md:px-12 py-3 overflow-x-auto" style={{ background: t.cardBg }}>
+            <div className="flex gap-2 px-6 md:px-12 py-3 overflow-x-auto" style={{ background: t.bgColor }}>
               {images.map((img, i) => (
                 <motion.button key={i} onClick={() => setActiveImg(i)} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
                   className="flex-shrink-0 overflow-hidden rounded-xl"
-                  style={{ width: 64, height: 64, background: t.bgColor, border: `2px solid ${i === activeImg ? t.ringColor : "transparent"}`, opacity: i === activeImg ? 1 : 0.55 }}>
+                  style={{ width: 64, height: 64, background: t.bgColor, border: `2px solid ${i === activeImg ? t.ringColor : t.borderColor}`, opacity: i === activeImg ? 1 : 0.55 }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={img} alt={`${i + 1}`} className="w-full h-full object-contain" style={{ padding: "4px" }} />
+                  <img src={img} alt={`${i + 1}`} className="w-full h-full object-cover" />
                 </motion.button>
               ))}
             </div>
