@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Serif_Display, Inter } from "next/font/google";
+import { Analytics } from "@vercel/analytics/react";
 import "./globals.css";
 
 const dmSerifDisplay = DM_Serif_Display({
@@ -38,6 +39,7 @@ export default function RootLayout({
     <html lang="tr" suppressHydrationWarning>
       <body className={`${dmSerifDisplay.variable} ${inter.variable} antialiased`}>
         {children}
+        <Analytics />
       </body>
     </html>
   );
