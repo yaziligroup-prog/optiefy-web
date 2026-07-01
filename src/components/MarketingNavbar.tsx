@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sun, Moon, ArrowRight, ChevronDown, Menu, X } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
@@ -11,11 +12,12 @@ import { L, D, BODY_FONT } from "@/lib/theme";
 import { createClient } from "@/utils/supabase/client";
 
 const NAV_LINKS = [
-  { label: "Özellikler",   href: "/#ozellikler" },
-  { label: "Fiyatlandırma", href: "/#fiyatlandirma" },
+  { label: "Özellikler",   id: "ozellikler" },
+  { label: "Fiyatlandırma", id: "fiyatlandirma" },
 ];
 
 export default function MarketingNavbar() {
+  const router = useRouter();
   const [isDark, setIsDark]       = useState(false);
   const [scrolled, setScrolled]   = useState(false);
   const [user, setUser]           = useState<User | null>(null);
@@ -45,6 +47,17 @@ export default function MarketingNavbar() {
     return next;
   });
 
+  const handleAnchorClick = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    setMobileOpen(false);
+    setToolsOpen(false);
+    if (window.location.pathname === "/") {
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      router.push(`/#${id}`);
+    }
+  };
+
   const c  = isDark ? D : L;
   const tr: React.CSSProperties = { transition: "background-color 0.4s ease, color 0.4s ease, border-color 0.4s ease" };
   const bodyFont = BODY_FONT;
@@ -70,8 +83,8 @@ export default function MarketingNavbar() {
         </Link>
 
         <nav className="hidden md:flex items-center gap-8">
-          {NAV_LINKS.map(({ label, href }) => (
-            <Link key={label} href={href} className="text-sm hover:opacity-60 transition-opacity" style={{ color: c.textMuted, fontFamily: bodyFont }}>
+          {NAV_LINKS.map(({ label, id }) => (
+            <Link key={label} href={`/#${id}`} onClick={(e) => handleAnchorClick(e, id)} className="text-sm hover:opacity-60 transition-opacity" style={{ color: c.textMuted, fontFamily: bodyFont }}>
               {label}
             </Link>
           ))}
@@ -162,8 +175,8 @@ export default function MarketingNavbar() {
             style={{ borderTop: `1px solid ${c.border}`, background: c.bg }}
           >
             <div className="px-6 py-4 flex flex-col gap-1">
-              {NAV_LINKS.map(({ label, href }) => (
-                <Link key={label} href={href} onClick={() => setMobileOpen(false)} className="py-2.5 text-sm font-medium" style={{ color: c.text, fontFamily: bodyFont }}>
+              {NAV_LINKS.map(({ label, id }) => (
+                <Link key={label} href={`/#${id}`} onClick={(e) => handleAnchorClick(e, id)} className="py-2.5 text-sm font-medium" style={{ color: c.text, fontFamily: bodyFont }}>
                   {label}
                 </Link>
               ))}

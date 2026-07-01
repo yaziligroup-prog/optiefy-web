@@ -198,9 +198,14 @@ export default function DomainSorgulamaPage() {
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <div style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: available ? "#22C55E" : "#F87171" }} />
-                        <span className="text-sm font-semibold truncate" style={{ color: c.text, fontFamily: bodyFont }}>
-                          {searchedName}<span style={{ color: available ? c.text : c.textSubtle, fontWeight: 400 }}>{tld}</span>
-                        </span>
+                        <div className="flex items-baseline min-w-0">
+                          <span className="text-sm font-semibold truncate min-w-0" style={{ color: c.text, fontFamily: bodyFont }}>
+                            {searchedName}
+                          </span>
+                          <span className="text-sm font-semibold flex-shrink-0 whitespace-nowrap" style={{ color: available ? c.text : c.textSubtle, fontWeight: 400, fontFamily: bodyFont }}>
+                            {tld}
+                          </span>
+                        </div>
                       </div>
                       {available ? (
                         <div className="flex items-center gap-3 flex-shrink-0">
