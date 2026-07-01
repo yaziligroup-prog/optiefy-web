@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Plus, ExternalLink, Copy, CheckCheck, Check, Package, Sparkles,
-  Crown, Globe, Palette, ArrowRight, Settings2, Power, Loader2, Eye,
-  LayoutGrid, Table2, Pencil,
+  Plus, ExternalLink, CheckCheck, Package, Sparkles,
+  Globe, Pencil, Power, Loader2, Eye, ArrowRight, Search,
+  X, RefreshCw, TrendingUp,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import Toast from "@/components/Toast";
@@ -18,7 +18,7 @@ import {
 import NewStoreWizard from "../_components/NewStoreWizard";
 import ProductEditorDrawer from "../_components/ProductEditorDrawer";
 
-type ViewMode = "grid" | "table";
+type StatusFilter = "all" | "active" | "pending";
 
 function slugify(name: string): string {
   return name
@@ -28,72 +28,71 @@ function slugify(name: string): string {
     .replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 }
 
-// ─── Page ───────────────────────────────────────────────────────────────────────
+// ─── Sayfa ────────────────────────────────────────────────────────────────────
 
 export default function UrunlerPage() {
   const { c, isDark } = usePanelTheme();
 
-  const [stores, setStores]         = useState<Store[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [copiedId, setCopiedId]     = useState<string | null>(null);
-  const [toastMsg, setToastMsg]     = useState("");
-  const [showToast, setShowToast]   = useState(false);
-  const [wizardOpen, setWizardOpen] = useState(false);
+  const [stores,      setStores]      = useState<Store[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [refreshing,  setRefreshing]  = useState(false);
+  const storesReady                   = useRef(false);
+
+  const [togglingId,  setTogglingId]  = useState<string | null>(null);
+  const [copiedId,    setCopiedId]    = useState<string | null>(null);
+  const [toastMsg,    setToastMsg]    = useState("");
+  const [showToast,   setShowToast]   = useState(false);
+  const [wizardOpen,  setWizardOpen]  = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
-  const [viewMode, setViewMode]     = useState<ViewMode>("grid");
   const [editingStore, setEditingStore] = useState<Store | null>(null);
 
-  // ── Supabase: mağazaları çek (eski mimariden korundu) ──
-  const fetchStores = useCallback(async () => {
-    setLoading(true);
+  // Arama + filtre
+  const [search,       setSearch]       = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+
+  // ── Fetch: product_image_base64 HARİÇ (200KB+ base64 → yavaşlığın kaynağı)
+  const fetchStores = useCallback(async (silent = false) => {
+    if (!silent) {
+      if (!storesReady.current) setLoading(true);
+      else setRefreshing(true);
+    }
     const supabase = createClient();
     const { data, error } = await supabase
       .from("stores")
       .select(
-        "id, created_at, store_name, product_price, product_image_base64, selected_plan, status, seo_title, description, features, image_urls, custom_domain, theme"
+        "id, created_at, store_name, product_price, currency, selected_plan, status, seo_title, description, features, image_urls, custom_domain, theme"
       )
       .order("created_at", { ascending: false });
-    if (!error && data) setStores(data as Store[]);
+    if (!error && data) {
+      setStores(data as Store[]);
+      storesReady.current = true;
+    }
     setLoading(false);
+    setRefreshing(false);
   }, []);
 
   useEffect(() => { fetchStores(); }, [fetchStores]);
 
-  // ── Tema değiştirme (eski mimariden korundu — `theme` kolonu) ──
-  const handleThemeChange = useCallback(async (storeId: string, themeId: ThemeId) => {
-    setUpdatingId(storeId);
-    const supabase = createClient();
-    const { error } = await supabase.from("stores").update({ theme: themeId }).eq("id", storeId);
-    if (error) {
-      setToastMsg("Tema güncellenirken bir hata oluştu.");
-    } else {
-      setStores((prev) => prev.map((s) => (s.id === storeId ? { ...s, theme: themeId } : s)));
-      setToastMsg(`Tema "${THEMES[themeId].name}" olarak güncellendi ✓`);
-    }
-    setShowToast(true);
-    setUpdatingId(null);
-  }, []);
-
-  // ── Yayın durumu değiştirme (active ↔ pending) ──
-  // Not: stores_status_check kısıtlaması yalnızca 'active' ve 'pending' değerlerine izin verir.
+  // ── Yayın durumu toggle ──
   const handleStatusToggle = useCallback(async (store: Store) => {
     const next = store.status === "active" ? "pending" : "active";
     setTogglingId(store.id);
+    // Optimistik güncelleme
+    setStores((prev) => prev.map((s) => (s.id === store.id ? { ...s, status: next } : s)));
     const supabase = createClient();
     const { error } = await supabase.from("stores").update({ status: next }).eq("id", store.id);
     if (error) {
+      // Geri al
+      setStores((prev) => prev.map((s) => (s.id === store.id ? { ...s, status: store.status } : s)));
       setToastMsg("Durum güncellenirken bir hata oluştu.");
     } else {
-      setStores((prev) => prev.map((s) => (s.id === store.id ? { ...s, status: next } : s)));
       setToastMsg(next === "active" ? "Vitrin yayına alındı ✓" : "Vitrin taslağa alındı");
     }
     setShowToast(true);
     setTogglingId(null);
   }, []);
 
-  const handleCopy = (store: Store) => {
+  const handleCopy = useCallback((store: Store) => {
     const slug = slugify(store.store_name);
     const url = store.custom_domain ? store.custom_domain : `optiefy.com/${slug}`;
     navigator.clipboard.writeText(`https://${url}`).catch(() => {});
@@ -101,40 +100,42 @@ export default function UrunlerPage() {
     setToastMsg("Vitrin bağlantısı panoya kopyalandı ✓");
     setShowToast(true);
     setTimeout(() => setCopiedId(null), 2200);
-  };
-
-  // ── Görünüm tercihini hatırla ──
-  useEffect(() => {
-    try {
-      const v = localStorage.getItem("optiefy-catalog-view");
-      if (v === "table" || v === "grid") setViewMode(v);
-    } catch { /* SSR */ }
   }, []);
-  const changeView = (v: ViewMode) => {
-    setViewMode(v);
-    try { localStorage.setItem("optiefy-catalog-view", v); } catch { /* ignore */ }
-  };
 
-  // ── Sihirbaz yeni vitrin oluşturdu → listeyi tazele + karta odaklan ──
   const handleWizardCreated = useCallback(async (storeId: string) => {
-    await fetchStores();
+    await fetchStores(true);
     setHighlightId(storeId);
     setToastMsg("Yeni vitriniz kataloğunuza eklendi ✓");
     setShowToast(true);
     setTimeout(() => setHighlightId(null), 2600);
   }, [fetchStores]);
 
-  // ── Ürün düzenleyici kaydetti → state'i güncelle (optimistic) ──
   const handleProductSaved = useCallback((storeId: string, patch: Partial<Store>) => {
     setStores((prev) => prev.map((s) => (s.id === storeId ? { ...s, ...patch } : s)));
     setToastMsg("Ürün bilgileri güncellendi ✓");
     setShowToast(true);
   }, []);
 
+  // ── Filtreli liste ──
+  const filtered = useMemo(() => {
+    let list = stores;
+    if (statusFilter !== "all") list = list.filter((s) => s.status === statusFilter);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (s) =>
+          s.store_name.toLowerCase().includes(q) ||
+          (s.seo_title ?? "").toLowerCase().includes(q) ||
+          (s.custom_domain ?? "").toLowerCase().includes(q),
+      );
+    }
+    return list;
+  }, [stores, statusFilter, search]);
+
   const activeCount = stores.filter((s) => s.status === "active").length;
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto space-y-6">
       <Toast message={toastMsg} show={showToast} onHide={() => setShowToast(false)} />
       <NewStoreWizard open={wizardOpen} onClose={() => setWizardOpen(false)} onCreated={handleWizardCreated} />
       <ProductEditorDrawer
@@ -148,539 +149,551 @@ export default function UrunlerPage() {
 
       {/* ── Header ── */}
       <motion.div
-        initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
-        className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8"
+        initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38 }}
       >
-        <div>
-          <h1 style={{ fontFamily: PANEL_DISPLAY_FONT, fontSize: "clamp(2rem,4vw,2.8rem)", fontWeight: 400, lineHeight: 1.1, letterSpacing: "-0.015em", color: c.text }}>
-            Katalog ve Vitrin Yönetimi
-          </h1>
-          <p className="text-sm mt-1.5" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
-            {loading
-              ? "Yükleniyor..."
-              : `${stores.length} vitrin · ${activeCount} yayında · AI ile üretilen tüm mağazalarınız`}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2.5">
-          {/* Görünüm geçişi */}
-          {stores.length > 0 && (
-            <div className="flex rounded-xl p-1" style={{ background: c.hover, border: `1px solid ${c.border}` }}>
-              {([["grid", LayoutGrid], ["table", Table2]] as const).map(([mode, Icon]) => {
-                const active = viewMode === mode;
-                return (
-                  <button key={mode} onClick={() => changeView(mode)}
-                    title={mode === "grid" ? "Kart görünümü" : "Tablo görünümü"}
-                    className="relative w-8 h-8 rounded-lg flex items-center justify-center">
-                    {active && (
-                      <motion.span layoutId="view-toggle" className="absolute inset-0 rounded-lg"
-                        style={{ background: c.cardBg, boxShadow: c.shadow }} transition={{ type: "spring", stiffness: 420, damping: 34 }} />
-                    )}
-                    <Icon className="w-4 h-4 relative z-10" style={{ color: active ? c.accentText : c.textSubtle }} />
-                  </button>
-                );
-              })}
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2.5 mb-1">
+              <h1 style={{
+                fontFamily: PANEL_DISPLAY_FONT,
+                fontSize: "clamp(1.8rem,3.5vw,2.6rem)",
+                fontWeight: 400,
+                lineHeight: 1.1,
+                letterSpacing: "-0.015em",
+                color: c.text,
+              }}>
+                Ürün Kataloğu
+              </h1>
+              {/* Hafif yenileme indikatörü */}
+              <AnimatePresence>
+                {refreshing && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                    <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+                      <RefreshCw className="w-4 h-4 mt-1" style={{ color: c.textSubtle }} />
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
-          )}
+            <p className="text-sm" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
+              {loading && !storesReady.current
+                ? "Vitrinler yükleniyor…"
+                : `${stores.length} ürün · ${activeCount} yayında`}
+            </p>
+          </div>
 
-          <motion.button
-            onClick={() => setWizardOpen(true)}
-            whileHover={{ opacity: 0.85 }} whileTap={{ scale: 0.97 }}
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold"
-            style={{ background: c.ctaBg, color: c.ctaText, fontFamily: PANEL_BODY_FONT, boxShadow: c.shadowMd }}
-          >
-            <Plus className="w-4 h-4" /> Yeni Vitrin Üret
-          </motion.button>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <motion.button
+              onClick={() => setWizardOpen(true)}
+              whileHover={{ opacity: 0.85 }} whileTap={{ scale: 0.97 }}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold"
+              style={{ background: c.ctaBg, color: c.ctaText, fontFamily: PANEL_BODY_FONT, boxShadow: c.shadowMd }}
+            >
+              <Plus className="w-4 h-4" /> Yeni Vitrin Üret
+            </motion.button>
+          </div>
         </div>
       </motion.div>
 
-      {/* ── States ── */}
-      {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="rounded-2xl overflow-hidden" style={{ background: c.cardBg, border: `1px solid ${c.border}` }}>
-              <div className="h-44 animate-pulse" style={{ background: c.hover }} />
-              <div className="p-4 space-y-2">
-                <div className="h-4 w-3/4 rounded-lg animate-pulse" style={{ background: c.hover }} />
-                <div className="h-3 w-1/2 rounded-lg animate-pulse" style={{ background: c.hover }} />
-              </div>
-            </div>
-          ))}
-        </div>
+      {/* ── Toolbar: arama + filtre ── */}
+      {(!loading || storesReady.current) && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+          className="flex flex-col sm:flex-row gap-3"
+        >
+          {/* Arama */}
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
+              style={{ color: c.textSubtle }} />
+            <input
+              type="text"
+              placeholder="Ürün ara…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 rounded-xl text-sm outline-none transition-all"
+              style={{
+                background: c.hover,
+                border: `1px solid ${c.border}`,
+                color: c.text,
+                fontFamily: PANEL_BODY_FONT,
+              }}
+            />
+            {search && (
+              <button onClick={() => setSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded">
+                <X className="w-3.5 h-3.5" style={{ color: c.textSubtle }} />
+              </button>
+            )}
+          </div>
+
+          {/* Durum filtreleri */}
+          <div className="flex rounded-xl p-1 gap-1" style={{ background: c.hover, border: `1px solid ${c.border}` }}>
+            {([
+              ["all",     "Tümü"],
+              ["active",  "Yayında"],
+              ["pending", "Taslak"],
+            ] as [StatusFilter, string][]).map(([key, label]) => {
+              const isActive = statusFilter === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setStatusFilter(key)}
+                  className="relative px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                  style={{
+                    color: isActive ? c.text : c.textSubtle,
+                    fontFamily: PANEL_BODY_FONT,
+                  }}
+                >
+                  {isActive && (
+                    <motion.span
+                      layoutId="status-pill"
+                      className="absolute inset-0 rounded-lg"
+                      style={{ background: c.cardBg, boxShadow: c.shadow }}
+                      transition={{ type: "spring", stiffness: 440, damping: 36 }}
+                    />
+                  )}
+                  <span className="relative z-10 flex items-center gap-1.5">
+                    {key === "active" && (
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#22C55E" }} />
+                    )}
+                    {key === "pending" && (
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#F59E0B" }} />
+                    )}
+                    {label}
+                    {key !== "all" && (
+                      <span className="text-[10px] opacity-70">
+                        ({stores.filter((s) => s.status === key).length})
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
+
+      {/* ── İçerik ── */}
+      {loading && !storesReady.current ? (
+        <SkeletonTable c={c} />
       ) : stores.length === 0 ? (
         <EmptyState c={c} onCreate={() => setWizardOpen(true)} />
-      ) : viewMode === "grid" ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-          {stores.map((store, i) => (
-            <StoreCard
-              key={store.id}
-              store={store}
-              index={i}
-              c={c}
-              isDark={isDark}
-              updating={updatingId === store.id}
-              toggling={togglingId === store.id}
-              copied={copiedId === store.id}
-              highlight={highlightId === store.id}
-              onThemeChange={handleThemeChange}
-              onStatusToggle={handleStatusToggle}
-              onCopy={handleCopy}
-              onEdit={() => setEditingStore(store)}
-            />
-          ))}
-        </div>
+      ) : filtered.length === 0 ? (
+        <NoResults c={c} onClear={() => { setSearch(""); setStatusFilter("all"); }} />
       ) : (
         <ProductTable
-          stores={stores}
+          stores={filtered}
           c={c}
           isDark={isDark}
           togglingId={togglingId}
+          copiedId={copiedId}
           highlightId={highlightId}
           onEdit={setEditingStore}
           onStatusToggle={handleStatusToggle}
+          onCopy={handleCopy}
         />
       )}
     </div>
   );
 }
 
-// ─── Tablo görünümü ───────────────────────────────────────────────────────────────
+// ─── Shopify Ürün Tablosu ─────────────────────────────────────────────────────
 
 function ProductTable({
-  stores, c, isDark, togglingId, highlightId, onEdit, onStatusToggle,
+  stores, c, isDark, togglingId, copiedId, highlightId, onEdit, onStatusToggle, onCopy,
 }: {
   stores: Store[];
   c: PanelPalette;
   isDark: boolean;
   togglingId: string | null;
+  copiedId: string | null;
   highlightId: string | null;
   onEdit: (s: Store) => void;
   onStatusToggle: (s: Store) => void;
+  onCopy: (s: Store) => void;
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
+      initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
       className="rounded-2xl overflow-hidden"
       style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadow }}
     >
       <div className="overflow-x-auto">
-        <table className="w-full" style={{ borderCollapse: "collapse", minWidth: 720 }}>
+        <table className="w-full" style={{ borderCollapse: "collapse", minWidth: 760 }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${c.borderSoft}` }}>
-              {["Ürün", "Fiyat", "Durum", "Tema", "Adres", ""].map((h, i) => (
-                <th key={i} className="text-left px-5 py-3.5 text-[11px] font-bold uppercase tracking-wider"
-                  style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT, whiteSpace: "nowrap" }}>{h}</th>
+              {["Ürün", "Fiyat", "Durum", "Tema", "Domain", "Tarih", ""].map((h, i) => (
+                <th
+                  key={i}
+                  className="text-left px-5 py-3.5 text-[11px] font-bold uppercase tracking-wider"
+                  style={{
+                    color: c.textSubtle,
+                    fontFamily: PANEL_BODY_FONT,
+                    whiteSpace: "nowrap",
+                    background: isDark ? "rgba(255,255,255,0.015)" : "rgba(0,0,0,0.018)",
+                  }}
+                >
+                  {h}
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {stores.map((store, i) => {
-              const img = store.image_urls?.[0] ?? store.product_image_base64;
-              const isLive = store.status === "active";
-              const theme = (store.theme ?? "modern") as ThemeId;
-              const cur = store.currency === "USD" ? "$" : "₺";
-              const highlighted = highlightId === store.id;
-              return (
-                <motion.tr
-                  key={store.id}
-                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }}
-                  onClick={() => onEdit(store)}
-                  className="cursor-pointer group"
-                  style={{
-                    borderBottom: i < stores.length - 1 ? `1px solid ${c.borderSoft}` : "none",
-                    background: highlighted ? (isDark ? "rgba(168,85,247,0.08)" : "#FAF5FF") : "transparent",
-                  }}
-                >
-                  {/* Ürün */}
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0"
-                        style={{ background: isDark ? "#0F0F0F" : "#F4F4F2", border: `1px solid ${c.border}` }}>
-                        {img ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={img} alt={store.store_name} className="w-full h-full object-contain p-1"
-                            style={{ filter: isLive ? "none" : "grayscale(0.35)" }} />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Package className="w-5 h-5" style={{ color: c.textSubtle }} />
-                          </div>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold truncate max-w-[220px]" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
-                          {store.seo_title ?? store.store_name}
-                        </p>
-                        <p className="text-[11px] truncate" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-                          {store.store_name}
-                        </p>
-                      </div>
-                    </div>
-                  </td>
-
-                  {/* Fiyat */}
-                  <td className="px-5 py-3.5">
-                    <span className="text-sm font-bold whitespace-nowrap" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
-                      {store.product_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {cur}
-                    </span>
-                  </td>
-
-                  {/* Durum */}
-                  <td className="px-5 py-3.5">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap"
-                      style={{
-                        background: isLive ? "rgba(34,197,94,0.12)" : "rgba(245,158,11,0.12)",
-                        color: isLive ? "#16A34A" : "#B45309",
-                        border: `1px solid ${isLive ? "rgba(34,197,94,0.3)" : "rgba(245,158,11,0.3)"}`,
-                      }}>
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: isLive ? "#22C55E" : "#F59E0B" }} />
-                      {isLive ? "Yayında" : "Taslak"}
-                    </span>
-                  </td>
-
-                  {/* Tema */}
-                  <td className="px-5 py-3.5">
-                    <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
-                      <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: THEMES[theme].accentColor }} />
-                      {THEMES[theme].shortName}
-                    </span>
-                  </td>
-
-                  {/* Adres */}
-                  <td className="px-5 py-3.5">
-                    {store.custom_domain ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-mono" style={{ color: "#16A34A" }}>
-                        <Globe className="w-3 h-3" /> {store.custom_domain}
-                      </span>
-                    ) : (
-                      <span className="text-xs" style={{ color: c.textSubtle }}>—</span>
-                    )}
-                  </td>
-
-                  {/* Aksiyon */}
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); if (togglingId !== store.id) onStatusToggle(store); }}
-                        title={isLive ? "Taslağa al" : "Yayına al"}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                        style={{ background: isLive ? "rgba(34,197,94,0.1)" : c.hover, border: `1px solid ${isLive ? "rgba(34,197,94,0.25)" : c.border}` }}>
-                        {togglingId === store.id
-                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: c.textMuted }} />
-                          : <Power className="w-3.5 h-3.5" style={{ color: isLive ? "#16A34A" : c.textSubtle }} />}
-                      </button>
-                      <span className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold"
-                        style={{ background: c.hover, border: `1px solid ${c.border}`, color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
-                        <Pencil className="w-3.5 h-3.5" /> Düzenle
-                      </span>
-                    </div>
-                  </td>
-                </motion.tr>
-              );
-            })}
+            {stores.map((store, i) => (
+              <ProductRow
+                key={store.id}
+                store={store}
+                isLast={i === stores.length - 1}
+                c={c}
+                isDark={isDark}
+                toggling={togglingId === store.id}
+                copied={copiedId === store.id}
+                highlight={highlightId === store.id}
+                onEdit={() => onEdit(store)}
+                onStatusToggle={() => onStatusToggle(store)}
+                onCopy={() => onCopy(store)}
+              />
+            ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Alt özet */}
+      <div className="px-5 py-3" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
+        <p className="text-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+          {stores.length} ürün gösteriliyor
+        </p>
       </div>
     </motion.div>
   );
 }
 
-// ─── Store card ─────────────────────────────────────────────────────────────────
+// ─── Satır ────────────────────────────────────────────────────────────────────
 
-function StoreCard({
-  store, index, c, isDark, updating, toggling, copied, highlight, onThemeChange, onStatusToggle, onCopy, onEdit,
+function ProductRow({
+  store, isLast, c, isDark, toggling, copied, highlight, onEdit, onStatusToggle, onCopy,
 }: {
   store: Store;
-  index: number;
+  isLast: boolean;
   c: PanelPalette;
   isDark: boolean;
-  updating: boolean;
   toggling: boolean;
   copied: boolean;
   highlight: boolean;
-  onThemeChange: (storeId: string, themeId: ThemeId) => void;
-  onStatusToggle: (store: Store) => void;
-  onCopy: (store: Store) => void;
   onEdit: () => void;
+  onStatusToggle: () => void;
+  onCopy: () => void;
 }) {
-  const slug = slugify(store.store_name);
-  const displayImage = store.image_urls?.[0] ?? store.product_image_base64;
-  const hasAI = !!(store.seo_title || store.description);
-  const currentTheme = (store.theme ?? "modern") as ThemeId;
+  const [hovered, setHovered] = useState(false);
+
+  const img    = store.image_urls?.[0];
   const isLive = store.status === "active";
-  const storeUrl = store.custom_domain ? store.custom_domain : `optiefy.com/${slug}`;
-  // Canlı harici vitrin adresi — yalnızca özel domain bağlıysa yayına çıkmıştır
-  const liveHref = store.custom_domain ? `https://${store.custom_domain}` : null;
+  const theme  = (store.theme ?? "modern") as ThemeId;
+  const cur    = store.currency === "USD" ? "$" : "₺";
+  const slug   = slugify(store.store_name);
+  const domain = store.custom_domain ?? `optiefy.com/${slug}`;
+
+  const rowBg = highlight
+    ? isDark ? "rgba(168,85,247,0.07)" : "#FAF5FF"
+    : hovered
+    ? isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.018)"
+    : "transparent";
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 18 }}
-      animate={{
-        opacity: isLive ? 1 : 0.92,
-        y: 0,
-        boxShadow: highlight ? "0 0 0 3px rgba(168,85,247,0.55), 0 12px 40px rgba(124,58,237,0.3)" : c.shadow,
-      }}
-      transition={{ delay: index * 0.07 }}
-      whileHover={{ y: -4 }}
-      className="rounded-2xl overflow-hidden flex flex-col group"
+    <tr
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={onEdit}
+      className="cursor-pointer"
       style={{
-        background: c.cardBg,
-        border: `1px solid ${highlight ? "rgba(168,85,247,0.6)" : isLive ? "rgba(34,197,94,0.28)" : c.border}`,
+        borderBottom: isLast ? "none" : `1px solid ${c.borderSoft}`,
+        background: rowBg,
+        transition: "background 0.15s",
+        outline: highlight ? `2px solid rgba(168,85,247,0.4)` : "none",
+        outlineOffset: "-2px",
       }}
     >
-      {/* Görsel */}
-      <div className="relative h-44 overflow-hidden" style={{ background: isDark ? "#0F0F0F" : "#F4F4F2" }}>
-        {displayImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={displayImage}
-            alt={store.seo_title ?? store.store_name}
-            className="w-full h-full object-contain p-5 group-hover:scale-105 transition-transform duration-500"
-            style={{ filter: isLive ? "none" : "grayscale(0.35)" }}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <Package className="w-12 h-12" style={{ color: c.textSubtle }} />
+      {/* ── Ürün ── */}
+      <td className="px-5 py-3.5">
+        <div className="flex items-center gap-3">
+          <div
+            className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 relative"
+            style={{ background: isDark ? "#111" : "#F4F4F2", border: `1px solid ${c.border}` }}
+          >
+            {img ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={img}
+                alt={store.store_name}
+                className="w-full h-full object-contain p-1.5"
+                style={{ filter: isLive ? "none" : "grayscale(0.4)" }}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <Package className="w-5 h-5" style={{ color: c.textSubtle }} />
+              </div>
+            )}
           </div>
-        )}
+          <div className="min-w-0">
+            <p
+              className="text-sm font-semibold truncate max-w-[200px] leading-tight"
+              style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}
+            >
+              {store.seo_title ?? store.store_name}
+            </p>
+            <p className="text-[11px] truncate max-w-[200px] mt-0.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+              {store.store_name}
+            </p>
+          </div>
+        </div>
+      </td>
 
-        {/* Durum pili */}
-        <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full px-2.5 py-1"
-          style={{ background: isDark ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.92)", border: `1px solid ${isLive ? "rgba(34,197,94,0.35)" : c.border}`, backdropFilter: "blur(8px)" }}>
+      {/* ── Fiyat ── */}
+      <td className="px-5 py-3.5 whitespace-nowrap">
+        <span className="text-sm font-bold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
+          {store.product_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {cur}
+        </span>
+      </td>
+
+      {/* ── Durum ── */}
+      <td className="px-5 py-3.5 whitespace-nowrap">
+        <span
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+          style={{
+            background: isLive ? "rgba(34,197,94,0.12)" : "rgba(245,158,11,0.12)",
+            color:      isLive ? "#16A34A"              : "#B45309",
+            border:     `1px solid ${isLive ? "rgba(34,197,94,0.3)" : "rgba(245,158,11,0.3)"}`,
+          }}
+        >
           <motion.span
-            animate={isLive ? { scale: [1, 1.35, 1] } : {}}
+            animate={isLive ? { scale: [1, 1.4, 1] } : {}}
             transition={{ duration: 1.8, repeat: Infinity }}
             className="w-1.5 h-1.5 rounded-full"
             style={{ background: isLive ? "#22C55E" : "#F59E0B" }}
           />
-          <span className="text-[11px] font-semibold" style={{ color: isLive ? "#16A34A" : "#B45309", fontFamily: PANEL_BODY_FONT }}>
-            {isLive ? "Yayında" : "Taslak"}
+          {isLive ? "Yayında" : "Taslak"}
+        </span>
+      </td>
+
+      {/* ── Tema ── */}
+      <td className="px-5 py-3.5 whitespace-nowrap">
+        <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
+          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: THEMES[theme].accentColor }} />
+          {THEMES[theme].shortName}
+        </span>
+      </td>
+
+      {/* ── Domain ── */}
+      <td className="px-5 py-3.5 whitespace-nowrap max-w-[180px]">
+        {store.custom_domain ? (
+          <a
+            href={`https://${store.custom_domain}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 text-xs font-mono hover:underline"
+            style={{ color: "#16A34A" }}
+          >
+            <Globe className="w-3 h-3 flex-shrink-0" />
+            <span className="truncate max-w-[130px]">{store.custom_domain}</span>
+            <ExternalLink className="w-2.5 h-2.5 opacity-60 flex-shrink-0" />
+          </a>
+        ) : (
+          <span className="text-xs font-mono truncate block max-w-[160px]" style={{ color: c.textSubtle }}>
+            {domain}
           </span>
-        </div>
-
-        {/* Plan */}
-        <div className="absolute top-3 right-3">
-          {store.selected_plan === "yearly" ? (
-            <div className="flex items-center gap-1 rounded-full px-2 py-1" style={{ background: "rgba(245,158,11,0.18)", border: "1px solid rgba(245,158,11,0.35)" }}>
-              <Crown className="w-3 h-3" style={{ color: "#D97706" }} />
-              <span className="text-[10px] font-bold tracking-wide" style={{ color: "#B45309" }}>YILLIK</span>
-            </div>
-          ) : (
-            <div className="rounded-full px-2 py-1" style={{ background: isDark ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.92)", border: `1px solid ${c.border}` }}>
-              <span className="text-[10px] font-bold tracking-wide" style={{ color: c.textMuted }}>AYLIK</span>
-            </div>
-          )}
-        </div>
-
-        {/* AI rozeti */}
-        {hasAI && (
-          <div className="absolute bottom-3 left-3 flex items-center gap-1 rounded-full px-2 py-0.5"
-            style={{ background: "linear-gradient(135deg,#7C3AED,#EC4899)" }}>
-            <Sparkles className="w-2.5 h-2.5 text-white" />
-            <span className="text-white text-[9px] font-bold">AI İçerik</span>
-          </div>
         )}
-      </div>
+      </td>
 
-      {/* Gövde */}
-      <div className="p-4 flex-1 flex flex-col">
-        <div className="flex items-start justify-between gap-3 mb-1.5">
-          <h3 className="font-semibold text-[15px] leading-snug line-clamp-2" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
-            {store.seo_title ?? store.store_name}
-          </h3>
-          <span className="text-sm font-bold whitespace-nowrap flex-shrink-0" style={{ color: c.accentText, fontFamily: PANEL_BODY_FONT }}>
-            {store.product_price.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺
-          </span>
+      {/* ── Tarih ── */}
+      <td className="px-5 py-3.5 whitespace-nowrap">
+        <span className="text-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+          {new Date(store.created_at).toLocaleDateString("tr-TR", {
+            day: "numeric", month: "short", year: "numeric",
+          })}
+        </span>
+      </td>
+
+      {/* ── Aksiyonlar ── */}
+      <td className="px-5 py-3.5">
+        <div
+          className="flex items-center gap-1.5 justify-end"
+          style={{
+            opacity: hovered ? 1 : 0.4,
+            transition: "opacity 0.15s",
+          }}
+        >
+          {/* Vitrin önizleme */}
+          <Link
+            href={`/panel/${store.id}`}
+            title="Vitrin sayfasını görüntüle"
+            onClick={(e) => e.stopPropagation()}
+            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors"
+            style={{ background: c.hover, border: `1px solid ${c.border}` }}
+          >
+            <Eye className="w-3.5 h-3.5" style={{ color: c.textMuted }} />
+          </Link>
+
+          {/* Kopyala */}
+          <button
+            title="Vitrin linkini kopyala"
+            onClick={(e) => { e.stopPropagation(); onCopy(); }}
+            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors"
+            style={{
+              background: copied ? "rgba(34,197,94,0.1)" : c.hover,
+              border: `1px solid ${copied ? "rgba(34,197,94,0.25)" : c.border}`,
+            }}
+          >
+            <CheckCheck className="w-3.5 h-3.5" style={{ color: copied ? "#16A34A" : c.textMuted }} />
+          </button>
+
+          {/* Yayın toggle */}
+          <button
+            title={isLive ? "Taslağa al" : "Yayına al"}
+            onClick={(e) => { e.stopPropagation(); if (!toggling) onStatusToggle(); }}
+            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors"
+            style={{
+              background: isLive ? "rgba(34,197,94,0.1)" : c.hover,
+              border: `1px solid ${isLive ? "rgba(34,197,94,0.25)" : c.border}`,
+            }}
+          >
+            {toggling
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: c.textMuted }} />
+              : <Power className="w-3.5 h-3.5" style={{ color: isLive ? "#16A34A" : c.textSubtle }} />}
+          </button>
+
+          {/* Düzenle */}
+          <button
+            title="Ürünü düzenle"
+            onClick={(e) => { e.stopPropagation(); onEdit(); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+            style={{ background: c.accentSoft, border: `1px solid ${c.border}`, color: c.accentText, fontFamily: PANEL_BODY_FONT }}
+          >
+            <Pencil className="w-3.5 h-3.5" /> Düzenle
+          </button>
         </div>
+      </td>
+    </tr>
+  );
+}
 
-        <div className="flex items-center gap-1 mb-2">
-          {store.custom_domain && <Globe className="w-3 h-3 flex-shrink-0" style={{ color: "#16A34A" }} />}
-          <p className="text-xs font-mono truncate" style={{ color: store.custom_domain ? "#16A34A" : c.textSubtle }}>{storeUrl}</p>
-        </div>
+// ─── Skeleton (table formatında, card değil) ──────────────────────────────────
 
-        {store.description && (
-          <p className="text-xs leading-relaxed line-clamp-2 mb-3" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
-            {store.description}
-          </p>
-        )}
-
-        <p className="text-[11px] mb-4" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-          Oluşturuldu: {new Date(store.created_at).toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" })}
-        </p>
-
-        {/* ── Tema seçici ── */}
-        <div className="mt-auto pt-3" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1.5">
-              <Palette className="w-3.5 h-3.5" style={{ color: c.textSubtle }} />
-              <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>Vitrin Teması</span>
-            </div>
-            <AnimatePresence mode="wait">
-              {updating ? (
-                <motion.span key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                  className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-                  <Loader2 className="w-3 h-3 animate-spin" /> Kaydediliyor
-                </motion.span>
-              ) : (
-                <motion.span key="name" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                  className="text-[11px] font-semibold" style={{ color: c.accentText, fontFamily: PANEL_BODY_FONT }}>
-                  {THEMES[currentTheme].shortName}
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <div className="flex gap-2.5 overflow-x-auto pb-1.5 mb-3 px-0.5">
-            {(Object.keys(THEMES) as ThemeId[]).map((tid) => {
-              const th = THEMES[tid];
-              const active = currentTheme === tid;
-              return (
-                <motion.button
-                  key={tid}
-                  onClick={() => !updating && !active && onThemeChange(store.id, tid)}
-                  whileHover={{ y: updating ? 0 : -2 }} whileTap={{ scale: 0.97 }}
-                  disabled={updating}
-                  title={th.name}
-                  className="relative flex-shrink-0 disabled:opacity-50"
-                  style={{ width: 64 }}
-                >
-                  {/* Mini vitrin önizlemesi (Shopify tema mağazası tarzı) */}
-                  <div
-                    className="rounded-lg overflow-hidden mb-1.5"
-                    style={{
-                      aspectRatio: "3 / 4",
-                      border: `2px solid ${active ? th.accentColor : c.border}`,
-                      boxShadow: active ? `0 4px 14px ${th.accentGlow}` : "none",
-                    }}
-                  >
-                    <div className="w-full h-full flex flex-col p-1.5" style={{ background: th.bgColor }}>
-                      <div className="h-1 rounded-full mb-1" style={{ width: "60%", background: th.titleColor }} />
-                      <div className="flex-1 rounded" style={{ background: th.galleryBg }} />
-                      <div className="h-2 mt-1.5" style={{ background: th.solidBtn, borderRadius: th.btnRadius === "9999px" ? "9999px" : "2px" }} />
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-center font-semibold truncate" style={{ color: active ? th.accentColor : c.textMuted, fontFamily: PANEL_BODY_FONT }}>
-                    {th.shortName}
-                  </p>
-                  {active && (
-                    <motion.span
-                      layoutId={`theme-check-${store.id}`}
-                      className="absolute -top-1.5 -right-1 w-4 h-4 rounded-full flex items-center justify-center"
-                      style={{ background: th.accentColor }}
-                    >
-                      <Check className="w-2.5 h-2.5 text-white" />
-                    </motion.span>
-                  )}
-                </motion.button>
-              );
-            })}
-          </div>
-
-          {/* ── Aksiyonlar ── birincil satır: Vitrini Görüntüle + canlı link ── */}
-          <div className="flex items-center gap-2 mb-2">
-            <Link href={`/panel/${store.id}`} className="flex-1">
-              <motion.span
-                whileTap={{ scale: 0.98 }}
-                className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold"
-                style={{ background: c.ctaBg, color: c.ctaText, fontFamily: PANEL_BODY_FONT }}>
-                <Eye className="w-3.5 h-3.5" /> Vitrini Görüntüle
-              </motion.span>
-            </Link>
-
-            {liveHref && (
-              <motion.a
-                href={liveHref} target="_blank" rel="noopener noreferrer"
-                whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-                title="Canlı siteyi yeni sekmede aç"
-                className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)" }}
-              >
-                <ExternalLink className="w-4 h-4" style={{ color: "#16A34A" }} />
-              </motion.a>
-            )}
-          </div>
-
-          {/* ── Aksiyonlar ── ikincil satır: Düzenle · Kopyala · Ayarlar · Yayın toggle ── */}
-          <div className="flex items-center gap-2">
-            {/* Düzenle — ürün detay/SEO düzenleyiciyi açar */}
-            <motion.button
-              onClick={onEdit}
-              whileTap={{ scale: 0.97 }}
-              title="Ürün ve SEO bilgilerini düzenle"
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-semibold"
-              style={{ background: c.accentSoft, border: `1px solid ${c.border}`, color: c.accentText, fontFamily: PANEL_BODY_FONT }}
-            >
-              <Pencil className="w-3.5 h-3.5" /> Düzenle
-            </motion.button>
-
-            {/* Kopyala */}
-            <motion.button
-              onClick={() => onCopy(store)}
-              whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.94 }}
-              title="Vitrin bağlantısını kopyala"
-              className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-              style={{ background: copied ? "rgba(34,197,94,0.12)" : c.hover, border: `1px solid ${copied ? "rgba(34,197,94,0.3)" : c.border}` }}
-            >
-              {copied
-                ? <CheckCheck className="w-4 h-4" style={{ color: "#16A34A" }} />
-                : <Copy className="w-4 h-4" style={{ color: c.textMuted }} />}
-            </motion.button>
-
-            {/* Ayarlar */}
-            <Link href="/panel/ayarlar" title="Mağaza ayarları"
-              className="flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0"
-              style={{ background: c.hover, border: `1px solid ${c.border}` }}>
-              <Settings2 className="w-4 h-4" style={{ color: c.textMuted }} />
-            </Link>
-
-            {/* Yayın durumu toggle (Pasife Al / Aktif Et) */}
-            <motion.button
-              onClick={() => !toggling && onStatusToggle(store)}
-              whileHover={{ scale: toggling ? 1 : 1.04 }} whileTap={{ scale: 0.94 }}
-              disabled={toggling}
-              title={isLive ? "Vitrini taslağa al" : "Vitrini yayına al"}
-              className="flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0 disabled:opacity-60"
-              style={{
-                background: isLive ? "rgba(34,197,94,0.12)" : c.hover,
-                border: `1px solid ${isLive ? "rgba(34,197,94,0.3)" : c.border}`,
-              }}
-            >
-              {toggling
-                ? <Loader2 className="w-4 h-4 animate-spin" style={{ color: c.textMuted }} />
-                : <Power className="w-4 h-4" style={{ color: isLive ? "#16A34A" : c.textSubtle }} />}
-            </motion.button>
-          </div>
+function SkeletonTable({ c }: { c: PanelPalette }) {
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: c.cardBg, border: `1px solid ${c.border}` }}>
+      {/* Thead */}
+      <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${c.borderSoft}`, background: c.hover }}>
+        <div className="grid grid-cols-7 gap-4">
+          {["w-16", "w-10", "w-12", "w-10", "w-24", "w-16", "w-8"].map((w, i) => (
+            <div key={i} className={`h-2.5 rounded animate-pulse ${w}`} style={{ background: c.border }} />
+          ))}
         </div>
       </div>
+      {/* Tbody */}
+      {[0, 1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className="px-5 py-4 flex items-center gap-4"
+          style={{ borderBottom: i < 3 ? `1px solid ${c.borderSoft}` : "none" }}
+        >
+          {/* Ürün */}
+          <div className="w-12 h-12 rounded-xl animate-pulse flex-shrink-0" style={{ background: c.hover }} />
+          <div className="flex-1 space-y-2">
+            <div className="h-3 w-40 rounded animate-pulse" style={{ background: c.hover }} />
+            <div className="h-2 w-24 rounded animate-pulse" style={{ background: c.hover }} />
+          </div>
+          {/* Diğer sütunlar */}
+          <div className="h-3 w-16 rounded animate-pulse" style={{ background: c.hover }} />
+          <div className="h-5 w-16 rounded-full animate-pulse" style={{ background: c.hover }} />
+          <div className="h-3 w-14 rounded animate-pulse" style={{ background: c.hover }} />
+          <div className="h-3 w-20 rounded animate-pulse" style={{ background: c.hover }} />
+          <div className="h-3 w-16 rounded animate-pulse" style={{ background: c.hover }} />
+          <div className="flex gap-1.5">
+            <div className="w-8 h-8 rounded-lg animate-pulse" style={{ background: c.hover }} />
+            <div className="w-8 h-8 rounded-lg animate-pulse" style={{ background: c.hover }} />
+            <div className="w-20 h-8 rounded-lg animate-pulse" style={{ background: c.hover }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Sonuç yok ───────────────────────────────────────────────────────────────
+
+function NoResults({ c, onClear }: { c: PanelPalette; onClear: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+      className="rounded-2xl flex flex-col items-center justify-center py-16 text-center"
+      style={{ background: c.cardBg, border: `1px solid ${c.border}` }}
+    >
+      <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
+        style={{ background: c.hover, border: `1px solid ${c.border}` }}>
+        <Search className="w-5 h-5" style={{ color: c.textSubtle }} />
+      </div>
+      <p className="text-sm font-semibold mb-1" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
+        Eşleşen ürün bulunamadı
+      </p>
+      <p className="text-xs mb-4" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+        Arama veya filtreyi temizlemeyi deneyin
+      </p>
+      <button
+        onClick={onClear}
+        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold"
+        style={{ background: c.hover, border: `1px solid ${c.border}`, color: c.textMuted, fontFamily: PANEL_BODY_FONT }}
+      >
+        <X className="w-3.5 h-3.5" /> Filtreyi Temizle
+      </button>
     </motion.div>
   );
 }
 
-// ─── Empty state ────────────────────────────────────────────────────────────────
+// ─── Empty state ──────────────────────────────────────────────────────────────
 
 function EmptyState({ c, onCreate }: { c: PanelPalette; onCreate: () => void }) {
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.45 }}
+      initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4 }}
       className="rounded-3xl flex flex-col items-center justify-center text-center px-6"
       style={{ background: c.cardBg, border: `1px dashed ${c.border}`, minHeight: "58vh" }}
     >
       <div className="relative mb-6">
-        <div className="w-20 h-20 rounded-3xl flex items-center justify-center" style={{ background: "linear-gradient(135deg,#7C3AED,#EC4899)" }}>
+        <div className="w-20 h-20 rounded-3xl flex items-center justify-center"
+          style={{ background: "linear-gradient(135deg,#7C3AED,#EC4899)" }}>
           <Package className="w-9 h-9 text-white" />
         </div>
         <motion.div
           animate={{ rotate: [0, 12, 0], y: [0, -3, 0] }} transition={{ duration: 3, repeat: Infinity }}
-          className="absolute -top-2 -right-2 w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadow }}
+          className="absolute -top-2 -right-2 w-8 h-8 rounded-xl flex items-center justify-center"
+          style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadow }}
         >
           <Sparkles className="w-4 h-4" style={{ color: "#7C3AED" }} />
         </motion.div>
       </div>
 
-      <h2 style={{ fontFamily: PANEL_DISPLAY_FONT, fontSize: "1.8rem", fontWeight: 400, color: c.text, marginBottom: "0.6rem" }}>
-        Henüz bir vitrin oluşturmadınız
+      {/* Özellik listesi */}
+      <div className="flex items-center gap-6 mb-6">
+        {[
+          { icon: Sparkles, label: "AI içerik", color: "#7C3AED" },
+          { icon: TrendingUp, label: "Analitik",  color: "#2563EB" },
+          { icon: Globe,     label: "Domain",     color: "#16A34A" },
+        ].map(({ icon: Icon, label, color }) => (
+          <div key={label} className="flex flex-col items-center gap-1.5">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${color}18` }}>
+              <Icon className="w-4 h-4" style={{ color }} />
+            </div>
+            <span className="text-[11px] font-medium" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>{label}</span>
+          </div>
+        ))}
+      </div>
+
+      <h2 style={{ fontFamily: PANEL_DISPLAY_FONT, fontSize: "1.8rem", fontWeight: 400, color: c.text, marginBottom: "0.5rem" }}>
+        Henüz ürün eklemediniz
       </h2>
       <p className="text-sm max-w-sm leading-relaxed mb-7" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
-        İlk ürününüzü ekleyerek başlayın. Tek bir fotoğraf yükleyin, yapay zeka saniyeler içinde profesyonel vitrininizi oluştursun.
+        Tek fotoğraf yükleyin, yapay zeka saniyeler içinde profesyonel vitrin oluştursun.
       </p>
 
       <motion.button
@@ -689,7 +702,7 @@ function EmptyState({ c, onCreate }: { c: PanelPalette; onCreate: () => void }) 
         className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl text-sm font-semibold"
         style={{ background: c.ctaBg, color: c.ctaText, fontFamily: PANEL_BODY_FONT, boxShadow: c.shadowMd }}
       >
-        <Sparkles className="w-4 h-4" /> İlk Vitrini Oluştur <ArrowRight className="w-4 h-4" />
+        <Sparkles className="w-4 h-4" /> İlk Vitrinini Oluştur <ArrowRight className="w-4 h-4" />
       </motion.button>
     </motion.div>
   );
