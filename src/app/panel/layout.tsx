@@ -258,8 +258,24 @@ const MOCK_NOTIFS = [
 
 function StoreSelector({ onNewStore }: { onNewStore: () => void }) {
   const { c, isDark } = usePanelTheme();
-  const { stores, activeStore, setActiveStoreId, loading } = useActiveStore();
-  const [open, setOpen] = useState(false);
+  const { stores, activeStore, setActiveStoreId, refreshStores, loading } = useActiveStore();
+  const [open,        setOpen]        = useState(false);
+  const [publishing,  setPublishing]  = useState(false);
+
+  const handlePublish = async () => {
+    if (!activeStore || publishing) return;
+    setPublishing(true);
+    try {
+      await fetch("/api/stores", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: activeStore.id, status: "active" }),
+      });
+      await refreshStores(true);
+    } finally {
+      setPublishing(false);
+    }
+  };
   const tr: React.CSSProperties = { transition: "background-color 0.3s, color 0.3s, border-color 0.3s" };
 
   if (loading || stores.length === 0) {
@@ -302,6 +318,34 @@ function StoreSelector({ onNewStore }: { onNewStore: () => void }) {
 
         <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 transition-transform" style={{ color: c.textSubtle, transform: open ? "rotate(180deg)" : "none" }} />
       </button>
+
+      {/* Taslak uyarısı + tek tıkla yayınla */}
+      {!isLive && activeStore && (
+        <motion.div
+          initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
+          className="mx-0 mt-1.5 rounded-xl overflow-hidden"
+          style={{ border: "1px solid rgba(245,158,11,0.25)", background: "rgba(245,158,11,0.06)" }}
+        >
+          <div className="flex items-center gap-2 px-3 py-2">
+            <span className="text-[10px] flex-1 leading-tight" style={{ color: "#D97706", fontFamily: PANEL_BODY_FONT }}>
+              Mağaza taslak modunda — ziyaretçiler göremez
+            </span>
+            <button
+              onClick={handlePublish}
+              disabled={publishing}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex-shrink-0"
+              style={{
+                background: publishing ? "rgba(34,197,94,0.08)" : "linear-gradient(135deg,#16A34A,#15803D)",
+                color: publishing ? "#6B7280" : "#FFFFFF",
+                fontFamily: PANEL_BODY_FONT,
+                opacity: publishing ? 0.7 : 1,
+              }}
+            >
+              {publishing ? "…" : "⚡ Yayınla"}
+            </button>
+          </div>
+        </motion.div>
+      )}
 
       <AnimatePresence>
         {open && (

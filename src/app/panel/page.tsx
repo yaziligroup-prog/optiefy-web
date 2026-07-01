@@ -464,7 +464,23 @@ function StatCard({
 
 export default function DashboardPage() {
   const { c, isDark } = usePanelTheme();
-  const { activeStore, activeStoreId } = useActiveStore();
+  const { activeStore, activeStoreId, refreshStores } = useActiveStore();
+  const [publishing, setPublishing] = useState(false);
+
+  const handlePublish = async () => {
+    if (!activeStore || publishing) return;
+    setPublishing(true);
+    try {
+      await fetch("/api/stores", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: activeStore.id, status: "active" }),
+      });
+      await refreshStores(true);
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   const [orders,       setOrders]      = useState<OrderWithItems[]>([]);
   const [loading,      setLoading]     = useState(true);
@@ -607,6 +623,49 @@ export default function DashboardPage() {
           </button>
         </div>
       </motion.div>
+
+      {/* Taslak mağaza uyarı banner'ı */}
+      {activeStore && activeStore.status !== "active" && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
+          className="flex items-center gap-4 px-5 py-3.5 rounded-2xl"
+          style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.22)" }}
+        >
+          <div className="flex items-center gap-2.5 flex-1 min-w-0">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: "rgba(245,158,11,0.12)" }}>
+              <AlertTriangle className="w-3.5 h-3.5" style={{ color: "#D97706" }} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold" style={{ color: "#D97706", fontFamily: PANEL_BODY_FONT }}>
+                Mağaza taslak modunda
+              </p>
+              <p className="text-xs truncate" style={{ color: "#92400E", fontFamily: PANEL_BODY_FONT }}>
+                Ziyaretçiler şu an mağazanızı göremez.{activeStore.custom_domain ? ` · ${activeStore.custom_domain}` : ""}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handlePublish}
+            disabled={publishing}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all flex-shrink-0"
+            style={{
+              background: publishing
+                ? "rgba(34,197,94,0.08)"
+                : "linear-gradient(135deg,#16A34A,#15803D)",
+              color: publishing ? "#6B7280" : "#FFFFFF",
+              fontFamily: PANEL_BODY_FONT,
+              boxShadow: publishing ? "none" : "0 4px 12px rgba(22,163,74,0.35)",
+              opacity: publishing ? 0.7 : 1,
+            }}
+          >
+            {publishing
+              ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Yayınlanıyor…</>
+              : <>⚡ Mağazayı Yayınla</>
+            }
+          </button>
+        </motion.div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
