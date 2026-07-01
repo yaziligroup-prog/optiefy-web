@@ -196,10 +196,10 @@ export default function DomainSorgulamaPage() {
                         background: isChosen ? (isDark ? "rgba(34,197,94,0.08)" : "#F0FDF4") : "transparent",
                       }}
                     >
-                      <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex items-center gap-3">
                         <div style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: available ? "#22C55E" : "#F87171" }} />
-                        <div className="flex items-baseline min-w-0">
-                          <span className="text-sm font-semibold truncate min-w-0" style={{ color: c.text, fontFamily: bodyFont }}>
+                        <div className="flex items-baseline flex-shrink-0 whitespace-nowrap">
+                          <span className="text-sm font-semibold whitespace-nowrap flex-shrink-0" style={{ color: c.text, fontFamily: bodyFont }}>
                             {searchedName}
                           </span>
                           <span className="text-sm font-semibold flex-shrink-0 whitespace-nowrap" style={{ color: available ? c.text : c.textSubtle, fontWeight: 400, fontFamily: bodyFont }}>

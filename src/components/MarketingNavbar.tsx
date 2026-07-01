@@ -176,7 +176,7 @@ export default function MarketingNavbar() {
           >
             <div className="px-6 py-4 flex flex-col gap-1">
               {NAV_LINKS.map(({ label, id }) => (
-                <Link key={label} href={`/#${id}`} onClick={(e) => handleAnchorClick(e, id)} className="py-2.5 text-sm font-medium" style={{ color: c.text, fontFamily: bodyFont }}>
+                <Link key={label} href={`/#${id}`} onClick={() => setMobileOpen(false)} className="py-2.5 text-sm font-medium" style={{ color: c.text, fontFamily: bodyFont }}>
                   {label}
                 </Link>
               ))}

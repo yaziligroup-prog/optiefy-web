@@ -1022,12 +1022,12 @@ export default function Home() {
                   style={{ borderTop: `1px solid ${c.border}`, background: c.bg }}
                 >
                   <div className="px-6 py-4 flex flex-col gap-1">
-                    <button onClick={() => { setMobileOpen(false); scrollTo(featuresRef); }} className="py-2.5 text-sm font-medium text-left" style={{ color: c.text, fontFamily: bodyFont }}>
+                    <Link href="/#ozellikler" onClick={() => setMobileOpen(false)} className="py-2.5 text-sm font-medium text-left" style={{ color: c.text, fontFamily: bodyFont }}>
                       Özellikler
-                    </button>
-                    <button onClick={() => { setMobileOpen(false); scrollTo(pricingRef); }} className="py-2.5 text-sm font-medium text-left" style={{ color: c.text, fontFamily: bodyFont }}>
+                    </Link>
+                    <Link href="/#fiyatlandirma" onClick={() => setMobileOpen(false)} className="py-2.5 text-sm font-medium text-left" style={{ color: c.text, fontFamily: bodyFont }}>
                       Fiyatlandırma
-                    </button>
+                    </Link>
                     <p className="pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: c.textSubtle, fontFamily: bodyFont }}>Araçlar</p>
                     <Link href="/araclar/domain-sorgulama" onClick={() => setMobileOpen(false)} className="py-2 text-sm font-medium" style={{ color: c.text, fontFamily: bodyFont }}>
                       Domain Sorgulama & Kayıt
