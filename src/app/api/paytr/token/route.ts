@@ -55,6 +55,13 @@ export async function POST(req: NextRequest) {
       .eq("id", storeId)
       .single();
 
+    // storeId geçersiz/silinmiş bir mağazaya işaret ediyorsa burada durdur —
+    // aksi halde sipariş, hiçbir satıcının panelinde görünmeyecek şekilde
+    // (sahipsiz/eşleşmeyen store_id ile) sessizce oluşturulmaya devam ederdi.
+    if (!store) {
+      return NextResponse.json({ error: "Mağaza bulunamadı." }, { status: 404 });
+    }
+
     // ── 2. Siparişi oluştur ──────────────────────────────────────────────────────
     // Mock modda (PAYTR_ENABLED=false) nihai durumu ("preparing"/"paid") doğrudan
     // insert anında yazıyoruz. Önceden "pending" yazıp ardından ayrı bir UPDATE ile
