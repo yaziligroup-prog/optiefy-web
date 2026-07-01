@@ -5,7 +5,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, ExternalLink, Copy, CheckCheck, Check, Package, Sparkles,
-  Crown, Globe, Palette, ArrowRight,
+  Crown, Globe, Palette, ArrowRight, Settings2, Power, Loader2, Eye,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import Toast from "@/components/Toast";
@@ -31,6 +31,7 @@ export default function UrunlerPage() {
   const [stores, setStores]         = useState<Store[]>([]);
   const [loading, setLoading]       = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [copiedId, setCopiedId]     = useState<string | null>(null);
   const [toastMsg, setToastMsg]     = useState("");
   const [showToast, setShowToast]   = useState(false);
@@ -51,7 +52,7 @@ export default function UrunlerPage() {
 
   useEffect(() => { fetchStores(); }, [fetchStores]);
 
-  // ── Tema değiştirme (eski mimariden korundu) ──
+  // ── Tema değiştirme (eski mimariden korundu — `theme` kolonu) ──
   const handleThemeChange = useCallback(async (storeId: string, themeId: ThemeId) => {
     setUpdatingId(storeId);
     const supabase = createClient();
@@ -60,19 +61,40 @@ export default function UrunlerPage() {
       setToastMsg("Tema güncellenirken bir hata oluştu.");
     } else {
       setStores((prev) => prev.map((s) => (s.id === storeId ? { ...s, theme: themeId } : s)));
-      setToastMsg(`✅ Tema "${THEMES[themeId].name}" olarak güncellendi!`);
+      setToastMsg(`Tema "${THEMES[themeId].name}" olarak güncellendi ✓`);
     }
     setShowToast(true);
     setUpdatingId(null);
   }, []);
 
+  // ── Yayın durumu değiştirme (active ↔ pending) ──
+  // Not: stores_status_check kısıtlaması yalnızca 'active' ve 'pending' değerlerine izin verir.
+  const handleStatusToggle = useCallback(async (store: Store) => {
+    const next = store.status === "active" ? "pending" : "active";
+    setTogglingId(store.id);
+    const supabase = createClient();
+    const { error } = await supabase.from("stores").update({ status: next }).eq("id", store.id);
+    if (error) {
+      setToastMsg("Durum güncellenirken bir hata oluştu.");
+    } else {
+      setStores((prev) => prev.map((s) => (s.id === store.id ? { ...s, status: next } : s)));
+      setToastMsg(next === "active" ? "Vitrin yayına alındı ✓" : "Vitrin taslağa alındı");
+    }
+    setShowToast(true);
+    setTogglingId(null);
+  }, []);
+
   const handleCopy = (store: Store) => {
     const slug = slugify(store.store_name);
-    const url = store.custom_domain ? `www.${store.custom_domain}` : `optiefy.com/${slug}`;
+    const url = store.custom_domain ? store.custom_domain : `optiefy.com/${slug}`;
     navigator.clipboard.writeText(`https://${url}`).catch(() => {});
     setCopiedId(store.id);
+    setToastMsg("Vitrin bağlantısı panoya kopyalandı ✓");
+    setShowToast(true);
     setTimeout(() => setCopiedId(null), 2200);
   };
+
+  const activeCount = stores.filter((s) => s.status === "active").length;
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -88,7 +110,9 @@ export default function UrunlerPage() {
             Katalog ve Vitrin Yönetimi
           </h1>
           <p className="text-sm mt-1.5" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
-            {loading ? "Yükleniyor..." : `${stores.length} aktif vitrin · AI ile üretilen tüm mağazalarınız`}
+            {loading
+              ? "Yükleniyor..."
+              : `${stores.length} vitrin · ${activeCount} yayında · AI ile üretilen tüm mağazalarınız`}
           </p>
         </div>
 
@@ -128,8 +152,10 @@ export default function UrunlerPage() {
               c={c}
               isDark={isDark}
               updating={updatingId === store.id}
+              toggling={togglingId === store.id}
               copied={copiedId === store.id}
               onThemeChange={handleThemeChange}
+              onStatusToggle={handleStatusToggle}
               onCopy={handleCopy}
             />
           ))}
@@ -142,29 +168,39 @@ export default function UrunlerPage() {
 // ─── Store card ─────────────────────────────────────────────────────────────────
 
 function StoreCard({
-  store, index, c, isDark, updating, copied, onThemeChange, onCopy,
+  store, index, c, isDark, updating, toggling, copied, onThemeChange, onStatusToggle, onCopy,
 }: {
   store: Store;
   index: number;
   c: PanelPalette;
   isDark: boolean;
   updating: boolean;
+  toggling: boolean;
   copied: boolean;
   onThemeChange: (storeId: string, themeId: ThemeId) => void;
+  onStatusToggle: (store: Store) => void;
   onCopy: (store: Store) => void;
 }) {
   const slug = slugify(store.store_name);
   const displayImage = store.image_urls?.[0] ?? store.product_image_base64;
   const hasAI = !!(store.seo_title || store.description);
   const currentTheme = (store.theme ?? "modern") as ThemeId;
-  const storeUrl = store.custom_domain ? `www.${store.custom_domain}` : `optiefy.com/${slug}`;
+  const isLive = store.status === "active";
+  const storeUrl = store.custom_domain ? store.custom_domain : `optiefy.com/${slug}`;
+  // Canlı harici vitrin adresi — yalnızca özel domain bağlıysa yayına çıkmıştır
+  const liveHref = store.custom_domain ? `https://${store.custom_domain}` : null;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.07 }}
       whileHover={{ y: -4 }}
       className="rounded-2xl overflow-hidden flex flex-col group"
-      style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadow }}
+      style={{
+        background: c.cardBg,
+        border: `1px solid ${isLive ? "rgba(34,197,94,0.28)" : c.border}`,
+        boxShadow: c.shadow,
+        opacity: isLive ? 1 : 0.92,
+      }}
     >
       {/* Görsel */}
       <div className="relative h-44 overflow-hidden" style={{ background: isDark ? "#0F0F0F" : "#F4F4F2" }}>
@@ -174,6 +210,7 @@ function StoreCard({
             src={displayImage}
             alt={store.seo_title ?? store.store_name}
             className="w-full h-full object-contain p-5 group-hover:scale-105 transition-transform duration-500"
+            style={{ filter: isLive ? "none" : "grayscale(0.35)" }}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
@@ -181,12 +218,17 @@ function StoreCard({
           </div>
         )}
 
-        {/* Durum */}
+        {/* Durum pili */}
         <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full px-2.5 py-1"
-          style={{ background: isDark ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.92)", border: `1px solid ${c.border}`, backdropFilter: "blur(8px)" }}>
-          <span className="w-1.5 h-1.5 rounded-full" style={{ background: store.status === "active" ? "#22C55E" : "#F59E0B" }} />
-          <span className="text-[11px] font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
-            {store.status === "active" ? "Yayında" : "Bekliyor"}
+          style={{ background: isDark ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.92)", border: `1px solid ${isLive ? "rgba(34,197,94,0.35)" : c.border}`, backdropFilter: "blur(8px)" }}>
+          <motion.span
+            animate={isLive ? { scale: [1, 1.35, 1] } : {}}
+            transition={{ duration: 1.8, repeat: Infinity }}
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ background: isLive ? "#22C55E" : "#F59E0B" }}
+          />
+          <span className="text-[11px] font-semibold" style={{ color: isLive ? "#16A34A" : "#B45309", fontFamily: PANEL_BODY_FONT }}>
+            {isLive ? "Yayında" : "Taslak"}
           </span>
         </div>
 
@@ -247,9 +289,19 @@ function StoreCard({
               <Palette className="w-3.5 h-3.5" style={{ color: c.textSubtle }} />
               <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>Vitrin Teması</span>
             </div>
-            <span className="text-[11px] font-semibold" style={{ color: c.accentText, fontFamily: PANEL_BODY_FONT }}>
-              {THEMES[currentTheme].shortName}
-            </span>
+            <AnimatePresence mode="wait">
+              {updating ? (
+                <motion.span key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+                  <Loader2 className="w-3 h-3 animate-spin" /> Kaydediliyor
+                </motion.span>
+              ) : (
+                <motion.span key="name" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  className="text-[11px] font-semibold" style={{ color: c.accentText, fontFamily: PANEL_BODY_FONT }}>
+                  {THEMES[currentTheme].shortName}
+                </motion.span>
+              )}
+            </AnimatePresence>
           </div>
 
           <div className="flex gap-2.5 overflow-x-auto pb-1.5 mb-3 px-0.5">
@@ -285,37 +337,84 @@ function StoreCard({
                     {th.shortName}
                   </p>
                   {active && (
-                    <span className="absolute -top-1.5 -right-1 w-4 h-4 rounded-full flex items-center justify-center" style={{ background: th.accentColor }}>
+                    <motion.span
+                      layoutId={`theme-check-${store.id}`}
+                      className="absolute -top-1.5 -right-1 w-4 h-4 rounded-full flex items-center justify-center"
+                      style={{ background: th.accentColor }}
+                    >
                       <Check className="w-2.5 h-2.5 text-white" />
-                    </span>
+                    </motion.span>
                   )}
                 </motion.button>
               );
             })}
           </div>
 
-          {/* ── Aksiyonlar ── */}
-          <div className="flex items-center gap-2">
+          {/* ── Aksiyonlar ── birincil satır: Vitrini Görüntüle + canlı link ── */}
+          <div className="flex items-center gap-2 mb-2">
             <Link href={`/panel/${store.id}`} className="flex-1">
-              <span className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold"
+              <motion.span
+                whileTap={{ scale: 0.98 }}
+                className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold"
                 style={{ background: c.ctaBg, color: c.ctaText, fontFamily: PANEL_BODY_FONT }}>
-                Vitrini Görüntüle <ExternalLink className="w-3.5 h-3.5" />
-              </span>
+                <Eye className="w-3.5 h-3.5" /> Vitrini Görüntüle
+              </motion.span>
             </Link>
-            <AnimatePresence mode="wait">
+
+            {liveHref && (
+              <motion.a
+                href={liveHref} target="_blank" rel="noopener noreferrer"
+                whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+                title="Canlı siteyi yeni sekmede aç"
+                className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)" }}
+              >
+                <ExternalLink className="w-4 h-4" style={{ color: "#16A34A" }} />
+              </motion.a>
+            )}
+          </div>
+
+          {/* ── Aksiyonlar ── ikincil satır: Kopyala · Ayarlar · Yayın toggle ── */}
+          <div className="flex items-center gap-2">
+            {/* Kopyala */}
+            <AnimatePresence mode="wait" initial={false}>
               <motion.button
                 key={copied ? "copied" : "copy"}
                 initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.85, opacity: 0 }} transition={{ duration: 0.15 }}
                 onClick={() => onCopy(store)}
                 title="Vitrin bağlantısını kopyala"
-                className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: copied ? "rgba(34,197,94,0.12)" : c.hover, border: `1px solid ${copied ? "rgba(34,197,94,0.3)" : c.border}` }}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-semibold"
+                style={{ background: copied ? "rgba(34,197,94,0.12)" : c.hover, border: `1px solid ${copied ? "rgba(34,197,94,0.3)" : c.border}`, color: copied ? "#16A34A" : c.textMuted, fontFamily: PANEL_BODY_FONT }}
               >
                 {copied
-                  ? <CheckCheck className="w-4 h-4" style={{ color: "#16A34A" }} />
-                  : <Copy className="w-4 h-4" style={{ color: c.textMuted }} />}
+                  ? <><CheckCheck className="w-3.5 h-3.5" /> Kopyalandı</>
+                  : <><Copy className="w-3.5 h-3.5" /> Kopyala</>}
               </motion.button>
             </AnimatePresence>
+
+            {/* Ayarlar */}
+            <Link href="/panel/ayarlar" title="Mağaza ayarları"
+              className="flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0"
+              style={{ background: c.hover, border: `1px solid ${c.border}` }}>
+              <Settings2 className="w-4 h-4" style={{ color: c.textMuted }} />
+            </Link>
+
+            {/* Yayın durumu toggle (Pasife Al / Aktif Et) */}
+            <motion.button
+              onClick={() => !toggling && onStatusToggle(store)}
+              whileHover={{ scale: toggling ? 1 : 1.04 }} whileTap={{ scale: 0.94 }}
+              disabled={toggling}
+              title={isLive ? "Vitrini taslağa al" : "Vitrini yayına al"}
+              className="flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0 disabled:opacity-60"
+              style={{
+                background: isLive ? "rgba(34,197,94,0.12)" : c.hover,
+                border: `1px solid ${isLive ? "rgba(34,197,94,0.3)" : c.border}`,
+              }}
+            >
+              {toggling
+                ? <Loader2 className="w-4 h-4 animate-spin" style={{ color: c.textMuted }} />
+                : <Power className="w-4 h-4" style={{ color: isLive ? "#16A34A" : c.textSubtle }} />}
+            </motion.button>
           </div>
         </div>
       </div>
