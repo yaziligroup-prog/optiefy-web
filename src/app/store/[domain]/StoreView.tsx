@@ -525,8 +525,11 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
         /* ── ARTISAN: stacked — full-width image banner then info column ── */
         <section ref={buyRef as React.RefObject<HTMLElement>} className="scroll-mt-24">
 
-          {/* Full-width image */}
-          <div className="relative w-full overflow-hidden" style={{ aspectRatio: "16/9", maxHeight: 520 }}>
+          {/* Full-width image — 4:3 oranı, object-contain → ürünün tamamı görünür */}
+          <div
+            className="relative w-full overflow-hidden"
+            style={{ aspectRatio: "4/3", maxHeight: "min(480px, 90vw)", background: t.galleryBg }}
+          >
             {images.length > 0 ? (
               <AnimatePresence mode="wait">
                 <motion.div key={activeImg} className="absolute inset-0"
@@ -534,7 +537,8 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
                   <FadeImage
                     src={images[activeImg]}
                     alt={productName}
-                    className="w-full h-full object-cover"
+                    className="absolute inset-0 w-full h-full object-contain"
+                    style={{ padding: "16px" }}
                     fallback={<ImagePlaceholder theme={t} label={productName} tall />}
                   />
                 </motion.div>
@@ -595,7 +599,7 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
                   className="flex-shrink-0 overflow-hidden rounded-xl"
                   style={{ width: 64, height: 64, background: t.bgColor, border: `2px solid ${i === activeImg ? t.ringColor : "transparent"}`, opacity: i === activeImg ? 1 : 0.55 }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={img} alt={`${i + 1}`} className="w-full h-full object-cover" />
+                  <img src={img} alt={`${i + 1}`} className="w-full h-full object-contain" style={{ padding: "4px" }} />
                 </motion.button>
               ))}
             </div>
@@ -676,11 +680,13 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
 
             {/* LEFT — gallery (sticky) */}
             <div className="md:sticky md:top-28 md:self-start space-y-5">
+              {/* Sabit 1:1 kare container — max 520px × 90vw → görsel asla taşmaz */}
               <div
-                className="relative overflow-hidden"
+                className="relative overflow-hidden w-full"
                 style={{
-                  background:  t.galleryBg,
-                  aspectRatio: layout === "luxury" ? "3/4" : "4/5",
+                  background:   t.galleryBg,
+                  aspectRatio:  "1 / 1",
+                  maxHeight:    "min(520px, 90vw)",
                   borderRadius: layout === "luxury" ? "4px" : "28px",
                 }}
               >
@@ -691,7 +697,9 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
                       <FadeImage
                         src={images[activeImg]}
                         alt={productName}
-                        className="w-full h-full object-cover"
+                        /* object-contain → tüm ürün görünür, kırpılmaz */
+                        className="absolute inset-0 w-full h-full object-contain"
+                        style={{ padding: "12px" }}
                         fallback={<ImagePlaceholder theme={t} label={productName} tall />}
                       />
                     </motion.div>
@@ -759,7 +767,7 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
                         opacity:      i === activeImg ? 1 : 0.5,
                       }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={img} alt={`${i + 1}`} className="w-full h-full object-cover" />
+                      <img src={img} alt={`${i + 1}`} className="w-full h-full object-contain" style={{ padding: "4px" }} />
                     </motion.button>
                   ))}
                 </div>
