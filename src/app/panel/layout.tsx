@@ -114,7 +114,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div style={{ ...tr, background: c.appBg, minHeight: "100vh", fontFamily: PANEL_BODY_FONT }}>
+    <div style={{ ...tr, background: c.appBg, minHeight: "100vh", fontFamily: PANEL_BODY_FONT, overflowX: "hidden", maxWidth: "100vw" }}>
 
       {/* ─── Desktop sidebar (fixed) ─── */}
       <aside className="hidden lg:flex fixed top-0 left-0 bottom-0 w-64 z-40 flex-col"
@@ -143,7 +143,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       </AnimatePresence>
 
       {/* ─── Main column ─── */}
-      <div className="lg:pl-64">
+      <div className="lg:pl-64 min-w-0 overflow-x-hidden">
 
         {/* Topbar */}
         <header
@@ -236,7 +236,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page content */}
-        <main className="px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        <main className="px-4 sm:px-6 lg:px-8 py-6 sm:py-8 min-w-0 overflow-x-hidden">
           {children}
         </main>
       </div>

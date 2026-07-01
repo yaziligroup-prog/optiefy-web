@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { DM_Serif_Display, Inter } from "next/font/google";
 import "./globals.css";
 
@@ -14,6 +14,13 @@ const inter = Inter({
   variable: "--font-body",
   display: "swap",
 });
+
+// Viewport: cihaz genişliğine tam otur, kullanıcı zoom'una izin ver
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+};
 
 export const metadata: Metadata = {
   title: "Optiefy — Eksiksiz E-Ticaret Altyapı Platformu",

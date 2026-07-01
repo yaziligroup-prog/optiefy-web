@@ -250,25 +250,31 @@ function ConversionFunnel({ funnel, isReal, c }: { funnel: FunnelData; isReal: b
           </p>
         </div>
       ) : (
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           {FUNNEL_STEPS.map((step, i) => {
             const val    = vals[step.key] ?? 0;
             const barPct = Math.max(0, Math.min(100, (val / max) * 100));
             const isLast = i === FUNNEL_STEPS.length - 1;
             return (
               <div key={step.key}>
-                <div className="flex items-center gap-4 py-3">
-                  <div style={{ minWidth: 160 }}>
-                    <p className="text-sm font-semibold leading-tight" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
-                      {step.label}
-                    </p>
-                    <p className="text-[11px] mt-0.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-                      {step.sub}
-                    </p>
+                {/* Mobil: iki satır (label + bar/%), masaüstü: tek satır */}
+                <div className="py-2.5">
+                  {/* Satır 1: etiket (her iki boyutta görünür) */}
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="min-w-0 flex-1 pr-3">
+                      <p className="text-sm font-semibold leading-tight truncate" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
+                        {step.label}
+                      </p>
+                      <p className="text-[11px] mt-0.5 hidden sm:block" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+                        {step.sub}
+                      </p>
+                    </div>
+                    <span className="text-sm font-bold flex-shrink-0" style={{ color: step.color, fontFamily: PANEL_BODY_FONT }}>
+                      {i === 0 ? "100%" : `%${pct(val, funnel.views)}`}
+                    </span>
                   </div>
-
-                  {/* Bar — CSS transition, framer-motion yok (smooth data swap) */}
-                  <div className="flex-1 relative h-8 rounded-lg overflow-hidden" style={{ background: c.hover }}>
+                  {/* Satır 2: bar */}
+                  <div className="relative h-7 rounded-lg overflow-hidden" style={{ background: c.hover }}>
                     <div
                       className="absolute inset-y-0 left-0 rounded-lg"
                       style={{
@@ -287,26 +293,16 @@ function ConversionFunnel({ funnel, isReal, c }: { funnel: FunnelData; isReal: b
                       </span>
                     </div>
                   </div>
-
-                  <div style={{ minWidth: 52, textAlign: "right" }}>
-                    <span className="text-sm font-bold" style={{ color: step.color, fontFamily: PANEL_BODY_FONT }}>
-                      {i === 0 ? "100%" : `%${pct(val, funnel.views)}`}
-                    </span>
-                  </div>
                 </div>
 
                 {!isLast && (
-                  <div className="flex items-center gap-4 pb-1">
-                    <div style={{ minWidth: 160 }} />
-                    <div className="flex-1 flex items-center gap-2">
-                      <div className="h-px flex-1" style={{ background: c.borderSoft }} />
-                      <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full flex-shrink-0"
-                        style={{ background: c.hover, color: c.textMuted, border: `1px solid ${c.borderSoft}`, fontFamily: PANEL_BODY_FONT }}>
-                        {transitions[i]}
-                      </span>
-                      <div className="h-px flex-1" style={{ background: c.borderSoft }} />
-                    </div>
-                    <div style={{ minWidth: 52 }} />
+                  <div className="flex items-center gap-2 py-1">
+                    <div className="h-px flex-1" style={{ background: c.borderSoft }} />
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
+                      style={{ background: c.hover, color: c.textMuted, border: `1px solid ${c.borderSoft}`, fontFamily: PANEL_BODY_FONT }}>
+                      {transitions[i]}
+                    </span>
+                    <div className="h-px flex-1" style={{ background: c.borderSoft }} />
                   </div>
                 )}
               </div>

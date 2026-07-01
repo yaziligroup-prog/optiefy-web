@@ -1,9 +1,9 @@
 /**
  * GET /api/analytics?from=ISO&to=ISO
- * Tarih aralığına göre filtrelenmiş analitik + dönüşüm hunisi.
+ * GET /api/analytics?liveOnly=true   ← hızlı path, sadece canlı sayaç
  *
- * Canlı ziyaretçi her zaman son 5 dk'dan bağımsız sorgulanır —
- * tarih filtresinden etkilenmez.
+ * liveOnly modu: tek küçük sorgu, ~5ms, 30sn'de LiveTrafficCard tarafından poll edilir.
+ * Tam mod: dönem analitiği + funnel; yalnızca tarih filtresi değişince tetiklenir.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
@@ -26,6 +26,19 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
+
+  // ── Hızlı path: sadece canlı ziyaretçi (LiveTrafficCard'ın 30sn poll'u) ──
+  if (searchParams.get("liveOnly") === "true") {
+    const { data: rows } = await supabase
+      .from("page_views")
+      .select("ip_address")
+      .gte("created_at", new Date(Date.now() - 5 * 60_000).toISOString())
+      .limit(500);
+    const liveVisitors = new Set((rows ?? []).map((r) => r.ip_address as string)).size;
+    return NextResponse.json({ liveVisitors });
+  }
+
+  // ── Tam path: dönem analitiği + funnel ──
   const fromParam = searchParams.get("from");
   const toParam   = searchParams.get("to");
 
@@ -36,16 +49,6 @@ export async function GET(req: NextRequest) {
   const sinceISO = new Date(since).toISOString();
   const untilISO = new Date(until).toISOString();
 
-  // ── Canlı ziyaretçi: DAIMA son 5 dk — tarih filtresinden bağımsız ──
-  const liveSinceISO = new Date(now - 5 * 60_000).toISOString();
-  const { data: liveRows } = await supabase
-    .from("page_views")
-    .select("ip_address")
-    .gte("created_at", liveSinceISO)
-    .limit(500);
-  const liveVisitors = new Set((liveRows ?? []).map((r) => r.ip_address as string)).size;
-
-  // ── Seçili dönem analitiği ──
   const { data: rows, error } = await supabase
     .from("page_views")
     .select("created_at, ip_address, event_type")
@@ -56,12 +59,12 @@ export async function GET(req: NextRequest) {
 
   if (error || !rows) {
     return NextResponse.json({
-      hasData: false, days: [], totalViews: 0, totalVisitors: 0, liveVisitors,
+      hasData: false, days: [], totalViews: 0, totalVisitors: 0,
       funnel: { views: 0, addToCart: 0, checkout: 0, purchases: 0 },
     });
   }
 
-  // Günlük kova aralığı
+  // Günlük kova
   const rangeDays = Math.max(1, Math.ceil((until - since) / 86_400_000));
   const days: { key: string; views: number; ips: Set<string> }[] = [];
   const idx = new Map<string, number>();
@@ -93,7 +96,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Dönem içindeki tamamlanan sipariş sayısı
   const { count: purchasesCount } = await supabase
     .from("orders")
     .select("id", { count: "exact", head: true })
@@ -106,7 +108,6 @@ export async function GET(req: NextRequest) {
     days:          days.map((d) => ({ key: d.key, views: d.views, visitors: d.ips.size })),
     totalViews:    funnelViews,
     totalVisitors: globalIps.size,
-    liveVisitors,                    // ← her zaman son 5 dk, filtreden bağımsız
     funnel: {
       views:     funnelViews,
       addToCart: funnelCart,
