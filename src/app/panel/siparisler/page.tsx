@@ -13,6 +13,7 @@ import type { OrderWithItems, OrderStatus, OrderItem } from "@/types/order";
 import {
   usePanelTheme, PANEL_BODY_FONT, PANEL_DISPLAY_FONT, type PanelPalette,
 } from "../_lib/theme";
+import { useActiveStore } from "../_lib/storeContext";
 
 // ─── Constants ───────────────────────────────────────────────────────────────────
 
@@ -299,25 +300,33 @@ function OrderDetailDrawer({
 
 export default function SiparislerPage() {
   const { c, isDark } = usePanelTheme();
+  const { activeStoreId, loading: storeLoading } = useActiveStore();
   const [orders, setOrders]   = useState<OrderWithItems[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab]         = useState<OrderStatus | "all">("all");
   const [search, setSearch]   = useState("");
   const [drawer, setDrawer]   = useState<OrderWithItems | null>(null);
 
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(async (sid: string | null, storeStillLoading: boolean) => {
+    if (!sid) {
+      if (!storeStillLoading) { setOrders([]); setLoading(false); }
+      return;
+    }
     setLoading(true);
     const supabase = createClient();
     const { data } = await supabase
       .from("orders")
       .select("*, order_items(*)")
+      .eq("store_id", sid)
       .order("created_at", { ascending: false })
       .limit(500);
     if (data) setOrders(data as OrderWithItems[]);
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchOrders(); }, [fetchOrders]);
+  useEffect(() => {
+    fetchOrders(activeStoreId, storeLoading);
+  }, [fetchOrders, activeStoreId, storeLoading]);
 
   const openDrawer = (o: OrderWithItems) => setDrawer(o);
   const closeDrawer = () => setDrawer(null);
@@ -368,7 +377,7 @@ export default function SiparislerPage() {
             </p>
           </div>
           <button
-            onClick={fetchOrders}
+            onClick={() => fetchOrders(activeStoreId, storeLoading)}
             title="Yenile"
             className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-1"
             style={{ ...tr, background: c.hover, border: `1px solid ${c.border}` }}
