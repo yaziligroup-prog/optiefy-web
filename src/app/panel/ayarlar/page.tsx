@@ -5,9 +5,8 @@ import { motion } from "framer-motion";
 import {
   User, Lock, Store, CheckCircle, AlertCircle, Loader2, Eye, EyeOff,
   ExternalLink, RefreshCw, Trash2, Shield, Truck, Globe, Copy, Check,
-  ChevronRight as ChevronRightIcon, Palette,
+  ChevronRight as ChevronRightIcon,
 } from "lucide-react";
-import { THEMES, type ThemeId } from "@/types/theme";
 import { createClient } from "@/utils/supabase/client";
 import type { User as SupaUser } from "@supabase/supabase-js";
 import {
@@ -429,111 +428,6 @@ function ShippingSection({ c }: { c: PanelPalette }) {
   );
 }
 
-// ─── ThemeSection ────────────────────────────────────────────────────────────────
-
-function ThemeSection({ c }: { c: PanelPalette }) {
-  // Aktif mağaza context'ten gelir — sidebar seçimiyle senkron
-  const { activeStore, refreshStores } = useActiveStore();
-  const [theme,  setTheme]  = useState<ThemeId>("artisan");
-  const [saving, setSaving] = useState(false);
-  const [saved,  setSaved]  = useState(false);
-
-  // Aktif mağaza değiştiğinde tema state'ini senkronize et
-  useEffect(() => {
-    if (activeStore) setTheme((activeStore.theme as ThemeId) ?? "artisan");
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStore?.id, activeStore?.theme]);
-
-  const handleSave = async () => {
-    if (!activeStore) return;
-    setSaving(true);
-    const res = await fetch("/api/stores", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: activeStore.id, theme }),
-    });
-    setSaving(false);
-    if (res.ok) {
-      await refreshStores(true);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
-    }
-  };
-
-  const THEME_DESC: Record<ThemeId, string> = {
-    luxury:    "Minimalist · Premium",
-    artisan:   "Sıcak · El işi",
-    modern:    "Modern · Temiz",
-    dynamic:   "Enerjik · Genç",
-    corporate: "Kurumsal · Profesyonel",
-  };
-
-  return (
-    <section className="rounded-2xl p-6 space-y-5" style={sectionCard(c)}>
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "#EC489915", border: "1px solid #EC489925" }}>
-            <Palette className="w-4 h-4" style={{ color: "#EC4899" }} />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Mağaza Tasarımı</h2>
-            <p className="text-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-              {activeStore
-                ? <>Düzenlenen mağaza: <span className="font-semibold" style={{ color: c.text }}>{activeStore.store_name}</span></>
-                : "Soldan bir mağaza seçin"}
-            </p>
-          </div>
-        </div>
-        {activeStore?.custom_domain && (
-          <span className="text-xs font-mono px-2.5 py-1 rounded-lg flex items-center gap-1.5"
-            style={{ background: "rgba(34,197,94,0.1)", color: "#16A34A", border: "1px solid rgba(34,197,94,0.25)" }}>
-            <Globe className="w-3 h-3" /> {activeStore.custom_domain}
-          </span>
-        )}
-      </div>
-
-      {!activeStore ? (
-        <p className="text-sm" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Henüz mağaza yok.</p>
-      ) : (
-        <>
-          <div>
-            <label className="text-xs font-medium block mb-3" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Tema Seçin</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              {(Object.keys(THEMES) as ThemeId[]).map((tid) => {
-                const th = THEMES[tid];
-                const sel = theme === tid;
-                return (
-                  <button key={tid} onClick={() => setTheme(tid)}
-                    className="flex flex-col items-start p-3.5 rounded-xl text-left transition-all"
-                    style={{
-                      background: sel ? `${th.accentColor}14` : (c.cardBgSoft ?? c.hover),
-                      border: sel ? `2px solid ${th.accentColor}` : `1px solid ${c.borderSoft}`,
-                    }}>
-                    <div className="flex gap-1 mb-2.5">
-                      {[th.accentColor, th.primaryBtn.startsWith("linear") ? th.accentColor : th.primaryBtn, th.titleColor].map((color, i) => (
-                        <span key={i} className="w-4 h-4 rounded-full flex-shrink-0" style={{ background: color }} />
-                      ))}
-                    </div>
-                    <p className="text-xs font-bold leading-tight" style={{ color: sel ? th.accentColor : c.text, fontFamily: PANEL_BODY_FONT }}>{th.name}</p>
-                    <p className="text-[10px] mt-0.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>{THEME_DESC[tid]}</p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <button onClick={handleSave} disabled={saving}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
-            style={{ background: saved ? "#05966920" : c.ctaBg, color: saved ? "#059669" : c.ctaText, fontFamily: PANEL_BODY_FONT, border: saved ? "1px solid #05966940" : "none", transition: "all 0.3s" }}>
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCircle className="w-4 h-4" /> : <Palette className="w-4 h-4" />}
-            {saving ? "Kaydediliyor…" : saved ? "Tema güncellendi ✓" : `"${THEMES[theme].name}" Temasını Kaydet`}
-          </button>
-        </>
-      )}
-    </section>
-  );
-}
-
 // ─── DangerSection ────────────────────────────────────────────────────────────────
 
 // ─── DomainSection ────────────────────────────────────────────────────────────────
@@ -906,9 +800,6 @@ export default function AyarlarPage() {
             <PasswordSection c={c} />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.20 }}>
-            <ThemeSection c={c} />
-          </motion.div>
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.26 }}>
             <StoresSection c={c} />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.32 }}>

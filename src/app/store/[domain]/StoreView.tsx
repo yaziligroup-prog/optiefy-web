@@ -6,10 +6,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Menu, X, ShoppingBag, ArrowRight, ChevronLeft, ChevronRight, ChevronDown,
   Truck, RefreshCcw, ShieldCheck, Gem, Award, Package,
-  Instagram, Twitter, Facebook,
+  Instagram, Twitter, Facebook, Timer,
 } from "lucide-react";
 import { THEMES, themeFontStack, type ThemeId, type ThemeConfig } from "@/types/theme";
-import type { Store, StoreThemeSettings } from "@/types/store";
+import type { Store, StoreThemeSettings, Product } from "@/types/store";
 import { CartProvider, useCart } from "@/lib/cart";
 import CartDrawer from "@/components/store/CartDrawer";
 import CheckoutModal from "@/components/store/CheckoutModal";
@@ -18,6 +18,8 @@ interface Props {
   store: Store;
   overrideTheme?: ThemeId;
   previewMode?: boolean;
+  /** Ürün detay rotası (/urun/[id]) — verildiğinde sayfa bu ürünü odağa alır */
+  focusProduct?: Product;
 }
 
 // ─── Layout variant derived from themeId ──────────────────────────────────────────
@@ -80,6 +82,42 @@ export function applyThemeSettings(base: ThemeConfig, ts: StoreThemeSettings | n
   if (body)    merged.fontFamilySans = body;
 
   return merged;
+}
+
+// ─── CountdownTimer — duyuru barı flash-sale geri sayımı ──────────────────────────
+// Kampanya bitişi simüle edilir (mount + 48 saat). SSR/hydration uyuşmazlığını
+// önlemek için sayaç yalnızca client mount'tan sonra render edilir.
+
+export function CountdownTimer({ color }: { color: string }) {
+  const target = useRef<number | null>(null);
+  const [left, setLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (target.current === null) target.current = Date.now() + 48 * 3600 * 1000;
+    const tick = () => setLeft(Math.max((target.current ?? 0) - Date.now(), 0));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (left === null) return null;
+
+  const total = Math.floor(left / 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const d = Math.floor(total / 86400);
+  const h = Math.floor((total % 86400) / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10px] font-bold tracking-tight flex-shrink-0"
+      style={{ background: "rgba(0,0,0,0.18)", color }}
+    >
+      <Timer className="w-3 h-3 flex-shrink-0" />
+      {pad(d)}g : {pad(h)}s : {pad(m)}dk : {pad(s)}sn
+    </span>
+  );
 }
 
 // ─── Static editorial content ─────────────────────────────────────────────────────
@@ -217,7 +255,7 @@ function AccordionItem({
 
 // ─── StoreViewInner ───────────────────────────────────────────────────────────────
 
-function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
+function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Props) {
   const defaultTheme: ThemeId =
     overrideTheme && THEMES[overrideTheme]
       ? overrideTheme
@@ -304,10 +342,13 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
   const aiProducts = (store.products ?? []).filter(
     (p) => !p.status || p.status === "active"
   );
-  const productName = aiProducts[0]?.name ?? store.seo_title ?? store.store_name;
 
-  // Price: prefer stored product_price; fallback to AI products[0].price if available
-  const productPrice = store.product_price ?? aiProducts[0]?.price ?? 0;
+  // Odak ürün (/urun/[id] rotası) varsa tüm detay verisi ondan türetilir
+  const fp = focusProduct ?? null;
+  const productName = fp?.name ?? aiProducts[0]?.name ?? store.seo_title ?? store.store_name;
+
+  // Price: focus ürün → stores.product_price → products[0]
+  const productPrice = fp?.price ?? store.product_price ?? aiProducts[0]?.price ?? 0;
   const isUSD = store.currency === "USD";
   const priceStr = isUSD
     ? "$" + productPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })
@@ -320,6 +361,7 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
   }
 
   const images: string[] = (() => {
+    if (fp?.image_url) return [toDataUrl(fp.image_url)];
     if (store.image_urls?.length) return store.image_urls;
     if (store.product_image_base64) return [toDataUrl(store.product_image_base64)];
     const fromProducts = aiProducts
@@ -330,10 +372,9 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
     return [];
   })();
 
-  // Description: the AI-generated seo_description stored in store.description
+  // Description: odak üründe kendi açıklaması, yoksa mağazanın AI açıklaması
   const features    = store.features ?? [];
-  // Use the full description (it's ≤160 chars — no split needed)
-  const description = store.description?.trim() || null;
+  const description = (fp?.description ?? store.description)?.trim() || null;
 
   // For the editorial story section (multi-paragraph long description, if ever present)
   const descParagraphs = store.description?.split(/\n\n+/).filter(Boolean) ?? [];
@@ -342,6 +383,16 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
   const [menuOpen,   setMenuOpen]   = useState(false);
   const [scrolled,   setScrolled]   = useState(false);
   const [showSticky, setShowSticky] = useState(false);
+
+  // Para birimi seçici (görsel tercih — fiyatlar mağaza para biriminde tutulur)
+  const [displayCurrency, setDisplayCurrency] = useState(store.currency ?? "TRY");
+
+  // Footer sosyal ikonları — yalnızca URL girilmiş olanlar aktif link olarak görünür
+  const socialLinks = [
+    { Icon: Instagram, url: ts?.social_instagram },
+    { Icon: Twitter,   url: ts?.social_twitter },
+    { Icon: Facebook,  url: ts?.social_facebook },
+  ].filter((s): s is { Icon: typeof Instagram; url: string } => !!s.url);
 
   const buyRef = useRef<HTMLElement>(null);
   const ctaRef = useRef<HTMLDivElement>(null);
@@ -389,7 +440,7 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
 
   const scrollToBuy = () => buyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   const heroImage   = images[0] ?? null;
-  const buildItem   = () => ({ id: store.id, name: productName, price: productPrice, image: heroImage });
+  const buildItem   = () => ({ id: fp?.id ?? store.id, name: productName, price: productPrice, image: heroImage });
   const handleAddToCart = () => { addItem(buildItem()); openDrawer(); trackEvent("add_to_cart"); };
   const handleBuyNow    = () => { addItem(buildItem()); openCheckout(); trackEvent("checkout"); };
 
@@ -400,9 +451,10 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
   const titleFont    = customHeading ?? (layout === "luxury" ? luxurySerif : layout === "artisan" ? artisanSerif : t.fontFamily);
   const heroSize     = layout === "luxury" ? "clamp(3rem, 9vw, 6.5rem)" : "clamp(2.6rem, 7vw, 5rem)";
 
-  // Hero metin override'ları — theme_settings doluysa DB verisinin önüne geçer
-  const heroTitle    = ts?.hero_title?.trim()    || productName;
-  const heroSubtitle = ts?.hero_subtitle?.trim() || description || SLOGAN;
+  // Hero metin override'ları — mağaza ana sayfasında theme_settings geçerli;
+  // ürün detay rotasında (focusProduct) her zaman ürünün kendi bilgisi gösterilir
+  const heroTitle    = fp ? productName : (ts?.hero_title?.trim() || productName);
+  const heroSubtitle = fp ? (description || SLOGAN) : (ts?.hero_subtitle?.trim() || description || SLOGAN);
 
   // Header icon color — white over full-bleed hero image, themed once scrolled
   const headerIconColor = scrolled ? t.titleColor : "#FFFFFF";
@@ -436,12 +488,13 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
       {/* ════ DUYURU BARI — theme_settings.announcement_text ════ */}
       {announcement && (
         <div
-          className="fixed top-0 left-0 right-0 z-40 flex items-center justify-center px-4"
+          className="fixed top-0 left-0 right-0 z-40 flex items-center justify-center gap-2.5 px-4"
           style={{ height: announceH, background: announceBg, color: announceColor }}
         >
           <p className="text-[11px] md:text-xs font-semibold tracking-wide truncate">
             {announcement}
           </p>
+          {ts?.show_countdown && <CountdownTimer color={announceColor} />}
         </div>
       )}
 
@@ -489,7 +542,21 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
           </h1>
         )}
 
-        <div className="flex-1 flex justify-end">
+        <div className="flex-1 flex justify-end items-center gap-3">
+          {/* Para birimi seçici — theme_settings.show_currency_selector */}
+          {ts?.show_currency_selector && (
+            <select
+              value={displayCurrency}
+              onChange={(e) => setDisplayCurrency(e.target.value)}
+              aria-label="Para birimi"
+              className="bg-transparent text-xs font-semibold cursor-pointer outline-none appearance-none text-center"
+              style={{ color: headerIconColor, border: `1px solid ${scrolled ? t.borderColor : "rgba(255,255,255,0.35)"}`, borderRadius: 8, padding: "3px 8px" }}
+            >
+              {["TRY", "USD", "AUD"].map((cur) => (
+                <option key={cur} value={cur} style={{ color: "#111" }}>{cur}</option>
+              ))}
+            </select>
+          )}
           <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={openDrawer} className="relative p-1.5 -mr-1.5">
             <ShoppingBag className="w-5 h-5" style={{ color: headerIconColor }} />
             <AnimatePresence>
@@ -537,11 +604,15 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
                   </a>
                 ))}
               </nav>
-              <div className="mt-auto flex items-center gap-5">
-                {[Instagram, Twitter, Facebook].map((Icon, i) => (
-                  <a key={i} href="#"><Icon className="w-4 h-4" style={{ color: t.subtleText }} /></a>
-                ))}
-              </div>
+              {socialLinks.length > 0 && (
+                <div className="mt-auto flex items-center gap-5">
+                  {socialLinks.map(({ Icon, url }, i) => (
+                    <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                      <Icon className="w-4 h-4" style={{ color: t.subtleText }} />
+                    </a>
+                  ))}
+                </div>
+              )}
             </motion.div>
           </>
         )}
@@ -1182,8 +1253,8 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
         </div>
       </section>
 
-      {/* ════ DİĞER ÜRÜNLER — sadece 2+ ürün varsa göster ════ */}
-      {aiProducts.length > 1 && (
+      {/* ════ DİĞER ÜRÜNLER — odak ürün hariç diğerleri ════ */}
+      {(fp ? aiProducts.filter((p) => p.id !== fp.id) : aiProducts.slice(1)).length > 0 && (
         <section className="max-w-7xl mx-auto px-6 md:px-12 py-16">
           <h2
             className="text-2xl font-bold mb-8 text-center"
@@ -1192,7 +1263,7 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
             Diğer Ürünler
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-            {aiProducts.slice(1).map((prod) => {
+            {(fp ? aiProducts.filter((p) => p.id !== fp.id) : aiProducts.slice(1)).map((prod) => {
               const prodImg = prod.image_url ?? null;
               const prodPrice = prod.price ?? 0;
               const priceDisplay = store.currency === "USD"
@@ -1255,13 +1326,16 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
                 <a key={label} href={href} className="text-sm text-white/40 hover:text-white/80 transition-colors">{label}</a>
               ))}
             </nav>
-            <div className="flex items-center gap-5">
-              {[Instagram, Twitter, Facebook].map((Icon, i) => (
-                <a key={i} href="#" className="text-white/40 hover:text-white/80 transition-colors">
-                  <Icon className="w-4 h-4" />
-                </a>
-              ))}
-            </div>
+            {socialLinks.length > 0 && (
+              <div className="flex items-center gap-5">
+                {socialLinks.map(({ Icon, url }, i) => (
+                  <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                    className="text-white/40 hover:text-white/80 transition-colors">
+                    <Icon className="w-4 h-4" />
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
           <div
             className="flex flex-col md:flex-row items-center justify-between gap-3 pt-8 text-white/25 text-xs"
@@ -1317,10 +1391,10 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
 
 // ─── Default export ───────────────────────────────────────────────────────────────
 
-export default function StoreView({ store, overrideTheme, previewMode }: Props) {
+export default function StoreView({ store, overrideTheme, previewMode, focusProduct }: Props) {
   return (
     <CartProvider>
-      <StoreViewInner store={store} overrideTheme={overrideTheme} previewMode={previewMode} />
+      <StoreViewInner store={store} overrideTheme={overrideTheme} previewMode={previewMode} focusProduct={focusProduct} />
     </CartProvider>
   );
 }

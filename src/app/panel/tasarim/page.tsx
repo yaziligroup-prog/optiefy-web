@@ -13,6 +13,7 @@ import {
   Store as StoreIcon, Megaphone, Palette, Circle, Rocket, Loader2, CheckCircle,
   AlertCircle, ShoppingBag, Monitor, Type, Image as ImageIcon, LayoutTemplate,
   Upload, X, ArrowRight, Sparkles, Undo2, Truck, Award, Gem,
+  Smartphone, Tablet, ChevronDown, PanelTop, Instagram, Twitter, Facebook, Layers,
 } from "lucide-react";
 import {
   usePanelTheme, PANEL_BODY_FONT, PANEL_DISPLAY_FONT, type PanelPalette,
@@ -20,11 +21,13 @@ import {
 import { useActiveStore } from "../_lib/storeContext";
 import { THEMES, THEME_FONT_NAMES, themeFontStack, type ThemeId } from "@/types/theme";
 import type { Store } from "@/types/store";
+import { CountdownTimer } from "@/app/store/[domain]/StoreView";
 
 // ─── Editor state modeli ─────────────────────────────────────────────────────
 // Yayınlandığında stores.theme_settings (jsonb) kolonuna snake_case yazılır.
 
 type EditorSettings = {
+  themeId:          ThemeId; // baz tema — stores.theme kolonuna yazılır
   storeName:        string;
   announcementText: string;
   primaryColor:     string;
@@ -35,7 +38,15 @@ type EditorSettings = {
   heroSubtitle:     string; // "" → mağaza açıklaması
   heroOverlay:      number; // 0–90 ek karartma %
   logoUrl:          string; // "" → metin logo
+  showCountdown:        boolean; // duyuru barında geri sayım sayacı
+  showCurrencySelector: boolean; // header'da TRY/USD/AUD dropdown'u
+  socialInstagram:  string;
+  socialTwitter:    string;
+  socialFacebook:   string;
 };
+
+// Editörde önizlenen dükkanın cihaz modu — sadece yerel görünüm, yayınlanmaz
+type DeviceMode = "mobile" | "tablet" | "desktop";
 
 const SLOGAN = "Ustaların elinde şekillenen, zamana meydan okuyan bir tasarım.";
 
@@ -49,6 +60,7 @@ type FeedbackState = { type: "success" | "error"; message: string } | null;
 function fromStore(s: Store): EditorSettings {
   const ts = s.theme_settings;
   return {
+    themeId:          s.theme && THEMES[s.theme as ThemeId] ? (s.theme as ThemeId) : "modern",
     storeName:        s.store_name ?? "",
     announcementText: ts?.announcement_text ?? "",
     primaryColor:     ts?.primary_color     ?? "#7C3AED",
@@ -59,13 +71,28 @@ function fromStore(s: Store): EditorSettings {
     heroSubtitle:     ts?.hero_subtitle     ?? "",
     heroOverlay:      ts?.hero_overlay      ?? 0,
     logoUrl:          ts?.logo_url          ?? "",
+    showCountdown:        ts?.show_countdown         ?? false,
+    showCurrencySelector: ts?.show_currency_selector ?? false,
+    socialInstagram:  ts?.social_instagram  ?? "",
+    socialTwitter:    ts?.social_twitter    ?? "",
+    socialFacebook:   ts?.social_facebook   ?? "",
   };
 }
 
 const FALLBACK_SETTINGS: EditorSettings = {
+  themeId: "modern",
   storeName: "Mağazam", announcementText: "", primaryColor: "#7C3AED", buttonRadius: 12,
   fontHeading: "", fontBody: "", heroTitle: "", heroSubtitle: "", heroOverlay: 0, logoUrl: "",
+  showCountdown: false, showCurrencySelector: false,
+  socialInstagram: "", socialTwitter: "", socialFacebook: "",
 };
+
+/** Protokolsüz girilen sosyal linklere https:// ekler — sanitizer http(s) şart koşar. */
+function normalizeUrl(v: string): string | null {
+  const s = v.trim();
+  if (!s) return null;
+  return /^https?:\/\//.test(s) ? s : `https://${s}`;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -221,6 +248,107 @@ function ColorSetting({ value, onChange, c }: {
   );
 }
 
+// Kompakt baz tema seçici — Ayarlar'daki büyük kartların yerini alan minimal swatch grid'i.
+// Tıklama anında sağdaki önizleme o temanın iskelet düzenine bürünür (yerel state).
+function ThemePicker({ value, onChange, c }: {
+  value: ThemeId; onChange: (v: ThemeId) => void; c: PanelPalette;
+}) {
+  return (
+    <div className="space-y-2.5">
+      <SettingLabel icon={Layers} iconColor="#F97316" title="1. Baz Tema Seçin" c={c} />
+      <div className="grid grid-cols-2 gap-2">
+        {(Object.keys(THEMES) as ThemeId[]).map((tid) => {
+          const th  = THEMES[tid];
+          const sel = value === tid;
+          return (
+            <button
+              key={tid}
+              onClick={() => onChange(tid)}
+              className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition-all"
+              style={{
+                background: sel ? `${th.accentColor}14` : c.cardBgSoft,
+                border: sel ? `1.5px solid ${th.accentColor}` : `1px solid ${c.borderSoft}`,
+              }}
+            >
+              <span className="flex gap-0.5 flex-shrink-0">
+                {[th.accentColor, th.primaryBtn.startsWith("linear") ? th.accentColor : th.primaryBtn].map((color, i) => (
+                  <span key={i} className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
+                ))}
+              </span>
+              <span className="text-[11px] font-bold truncate"
+                style={{ color: sel ? th.accentColor : c.textMuted, fontFamily: PANEL_BODY_FONT }}>
+                {th.shortName}
+              </span>
+              {sel && <CheckCircle className="w-3 h-3 ml-auto flex-shrink-0" style={{ color: th.accentColor }} />}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ToggleSetting({ label, checked, onChange, accent, c }: {
+  label: string; checked: boolean; onChange: (v: boolean) => void;
+  accent: string; c: PanelPalette;
+}) {
+  return (
+    <button
+      onClick={() => onChange(!checked)}
+      className="flex items-center justify-between w-full py-1 group"
+      type="button"
+    >
+      <span className="text-xs font-medium" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
+        {label}
+      </span>
+      <span
+        className="relative w-9 h-5 rounded-full flex-shrink-0 transition-colors duration-200"
+        style={{ background: checked ? accent : c.hover, border: `1px solid ${checked ? accent : c.border}` }}
+      >
+        <span
+          className="absolute top-[1px] left-[1px] w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200"
+          style={{ transform: checked ? "translateX(16px)" : "translateX(0)" }}
+        />
+      </span>
+    </button>
+  );
+}
+
+function AccordionSection({ icon, iconColor, title, c, children, defaultOpen = false }: {
+  icon: React.ElementType; iconColor: string; title: string;
+  c: PanelPalette; children: React.ReactNode; defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-xl" style={{ border: `1px solid ${c.borderSoft}`, background: c.cardBgSoft }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center justify-between w-full px-3.5 py-3"
+        type="button"
+      >
+        <SettingLabel icon={icon} iconColor={iconColor} title={title} c={c} />
+        <ChevronDown
+          className="w-4 h-4 transition-transform duration-200 flex-shrink-0"
+          style={{ color: c.textSubtle, transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+        />
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden"
+          >
+            <div className="px-3.5 pb-4 space-y-3">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function FontSelect({ label, value, onChange, c }: {
   label: string; value: string; onChange: (v: string) => void; c: PanelPalette;
 }) {
@@ -320,10 +448,10 @@ const WHY = [
   { icon: Gem,   label: "1. Sınıf Malzeme", sub: "Doğal & dayanıklı" },
 ];
 
-function PreviewStore({ s, store }: { s: EditorSettings; store: Store | null }) {
-  // Baz tema — StoreView ile aynı çözümleme (store.theme → THEMES)
-  const themeId: ThemeId =
-    store?.theme && THEMES[store.theme as ThemeId] ? (store.theme as ThemeId) : "modern";
+function PreviewStore({ s, store, device }: { s: EditorSettings; store: Store | null; device: DeviceMode }) {
+  const isMobile = device === "mobile";
+  // Baz tema — editördeki seçimden gelir (yerel state → sıfır gecikme iskelet değişimi)
+  const themeId: ThemeId = s.themeId;
   const t      = THEMES[themeId];
   const layout = themeId === "luxury" ? "luxury" : themeId === "artisan" ? "artisan" : "tech";
 
@@ -361,12 +489,13 @@ function PreviewStore({ s, store }: { s: EditorSettings; store: Store | null }) 
   return (
     <div className="w-full flex flex-col overflow-hidden" style={{ background: t.bgColor, fontFamily: bodyFont }}>
 
-      {/* ── Duyuru barı ── */}
+      {/* ── Duyuru barı — opsiyonel flash-sale geri sayımıyla ── */}
       {s.announcementText.trim() !== "" && (
-        <div className="px-4 py-2 text-center text-[11px] font-semibold tracking-wide flex items-center justify-center gap-1.5"
+        <div className="px-4 py-2 text-center text-[11px] font-semibold tracking-wide flex items-center justify-center gap-2"
           style={{ background: primary, color: btnText }}>
           <Sparkles className="w-3 h-3 flex-shrink-0" />
           <span className="truncate">{s.announcementText}</span>
+          {s.showCountdown && <CountdownTimer color={btnText} />}
         </div>
       )}
 
@@ -387,25 +516,35 @@ function PreviewStore({ s, store }: { s: EditorSettings; store: Store | null }) 
 
         {/* Transparan header */}
         <div className="absolute top-0 inset-x-0 flex items-center justify-between px-6 h-14 z-10">
-          <nav className="hidden sm:flex items-center gap-5 flex-1">
-            {["Tüm Ürünler", "Koleksiyonlar", "Hakkımızda"].map((item) => (
-              <span key={item} className="text-[10px] font-medium tracking-wide" style={{ color: "rgba(255,255,255,0.85)" }}>
-                {item}
-              </span>
-            ))}
-          </nav>
+          {!isMobile && (
+            <nav className="flex items-center gap-5 flex-1">
+              {["Tüm Ürünler", "Koleksiyonlar", "Hakkımızda"].map((item) => (
+                <span key={item} className="text-[10px] font-medium tracking-wide" style={{ color: "rgba(255,255,255,0.85)" }}>
+                  {item}
+                </span>
+              ))}
+            </nav>
+          )}
           {s.logoUrl ? (
             /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={s.logoUrl} alt={brand} className="h-6 w-auto object-contain sm:absolute sm:left-1/2 sm:-translate-x-1/2" />
+            <img src={s.logoUrl} alt={brand}
+              className={`h-6 w-auto object-contain ${isMobile ? "" : "absolute left-1/2 -translate-x-1/2"}`} />
           ) : (
             <span
-              className="text-xs font-black tracking-[0.3em] uppercase sm:absolute sm:left-1/2 sm:-translate-x-1/2 truncate max-w-[45%]"
+              className={`text-xs font-black tracking-[0.3em] uppercase truncate max-w-[45%] ${isMobile ? "" : "absolute left-1/2 -translate-x-1/2"}`}
               style={{ color: "#FFFFFF", fontFamily: headingFont }}
             >
               {brand}
             </span>
           )}
-          <div className="flex-1 flex justify-end">
+          <div className="flex-1 flex justify-end items-center gap-2.5">
+            {/* Para birimi seçici */}
+            {s.showCurrencySelector && (
+              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md flex items-center gap-0.5"
+                style={{ color: "#FFFFFF", border: "1px solid rgba(255,255,255,0.35)" }}>
+                {store?.currency ?? "TRY"} <ChevronDown className="w-2.5 h-2.5" />
+              </span>
+            )}
             <div className="relative">
               <ShoppingBag className="w-4 h-4" style={{ color: "#FFFFFF" }} />
               <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full text-[8px] font-extrabold flex items-center justify-center"
@@ -448,7 +587,7 @@ function PreviewStore({ s, store }: { s: EditorSettings; store: Store | null }) 
       </div>
 
       {/* ── SATIN ALMA BÖLÜMÜ — gerçek ürün verisiyle ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center px-6 py-7">
+      <div className={`grid gap-6 items-center px-6 py-7 ${isMobile ? "grid-cols-1" : "grid-cols-2"}`}>
         <div className="relative w-full overflow-hidden" style={{ aspectRatio: "4/3", background: t.cardBg, borderRadius: 14 }}>
           {galleryImage ? (
             /* eslint-disable-next-line @next/next/no-img-element */
@@ -510,12 +649,26 @@ function PreviewStore({ s, store }: { s: EditorSettings; store: Store | null }) 
         ))}
       </div>
 
-      {/* ── Footer ── */}
+      {/* ── Footer — sosyal ikonlar yalnızca URL girildiyse aktifleşir ── */}
       <div className="px-6 py-5 text-center" style={{ background: t.footerBg }}>
         <p className="text-xs font-black tracking-[0.3em] uppercase" style={{ color: "rgba(255,255,255,0.85)", fontFamily: headingFont }}>
           {brand}
         </p>
-        <p className="text-[9px] mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>
+        {(() => {
+          const socials = [
+            { Icon: Instagram, url: s.socialInstagram.trim() },
+            { Icon: Twitter,   url: s.socialTwitter.trim() },
+            { Icon: Facebook,  url: s.socialFacebook.trim() },
+          ].filter((x) => x.url);
+          return socials.length > 0 ? (
+            <div className="flex items-center justify-center gap-4 mt-2.5">
+              {socials.map(({ Icon }, i) => (
+                <Icon key={i} className="w-3.5 h-3.5" style={{ color: "rgba(255,255,255,0.55)" }} />
+              ))}
+            </div>
+          ) : null;
+        })()}
+        <p className="text-[9px] mt-2" style={{ color: "rgba(255,255,255,0.4)" }}>
           © 2026 {brand} · Optiefy altyapısıyla
         </p>
       </div>
@@ -533,6 +686,7 @@ export default function TasarimPage() {
   const [baseline,   setBaseline]   = useState<EditorSettings>(FALLBACK_SETTINGS);
   const [publishing, setPublishing] = useState(false);
   const [fb,         setFb]         = useState<FeedbackState>(null);
+  const [device,     setDevice]     = useState<DeviceMode>("desktop");
 
   // Aktif mağaza değişince editörü + baseline'ı DB haliyle senkronize et
   useEffect(() => {
@@ -571,6 +725,7 @@ export default function TasarimPage() {
         body: JSON.stringify({
           id:         activeStore.id,
           store_name: settings.storeName.trim() || activeStore.store_name,
+          theme:      settings.themeId, // baz tema — özelleştirmelerle aynı PATCH'te
           theme_settings: {
             announcement_text: settings.announcementText,
             primary_color:     settings.primaryColor,
@@ -581,6 +736,11 @@ export default function TasarimPage() {
             hero_subtitle:     settings.heroSubtitle || null,
             hero_overlay:      settings.heroOverlay,
             logo_url:          settings.logoUrl      || null,
+            show_countdown:         settings.showCountdown,
+            show_currency_selector: settings.showCurrencySelector,
+            social_instagram:  normalizeUrl(settings.socialInstagram),
+            social_twitter:    normalizeUrl(settings.socialTwitter),
+            social_facebook:   normalizeUrl(settings.socialFacebook),
           },
         }),
       });
@@ -626,6 +786,8 @@ export default function TasarimPage() {
               </div>
             )}
 
+            <ThemePicker value={settings.themeId} onChange={(v) => set("themeId", v)} c={c} />
+
             <TextSetting
               icon={StoreIcon} iconColor="#7C3AED" title="Mağaza Adı"
               value={settings.storeName}
@@ -640,12 +802,20 @@ export default function TasarimPage() {
               c={c}
             />
 
-            <TextSetting
-              icon={Megaphone} iconColor="#F59E0B" title="Duyuru Barı Metni"
-              value={settings.announcementText}
-              onChange={(v) => set("announcementText", v)}
-              placeholder="Örn: 2000 TL üzeri ücretsiz kargo!" c={c}
-            />
+            <div className="space-y-3">
+              <TextSetting
+                icon={Megaphone} iconColor="#F59E0B" title="Duyuru Barı Metni"
+                value={settings.announcementText}
+                onChange={(v) => set("announcementText", v)}
+                placeholder="Örn: 2000 TL üzeri ücretsiz kargo!" c={c}
+              />
+              <ToggleSetting
+                label="Geri Sayım Sayacı Göster (Flash Sale)"
+                checked={settings.showCountdown}
+                onChange={(v) => set("showCountdown", v)}
+                accent={settings.primaryColor} c={c}
+              />
+            </div>
 
             <ColorSetting value={settings.primaryColor} onChange={(v) => set("primaryColor", v)} c={c} />
 
@@ -700,6 +870,44 @@ export default function TasarimPage() {
               />
             </div>
 
+            {/* ── Üst Menü Ayarları ── */}
+            <div className="space-y-3">
+              <SettingLabel icon={PanelTop} iconColor="#D946EF" title="Üst Menü Ayarları" c={c} />
+              <ToggleSetting
+                label="Para Birimi Seçiciyi Göster (TRY · USD · AUD)"
+                checked={settings.showCurrencySelector}
+                onChange={(v) => set("showCurrencySelector", v)}
+                accent={settings.primaryColor} c={c}
+              />
+            </div>
+
+            {/* ── Sosyal Medya Linkleri (Accordion) ── */}
+            <AccordionSection icon={Instagram} iconColor="#E1306C" title="Sosyal Medya Linkleri" c={c}>
+              {([
+                { key: "socialInstagram" as const, Icon: Instagram, label: "Instagram", placeholder: "instagram.com/magazam" },
+                { key: "socialTwitter"   as const, Icon: Twitter,   label: "Twitter / X", placeholder: "x.com/magazam" },
+                { key: "socialFacebook"  as const, Icon: Facebook,  label: "Facebook", placeholder: "facebook.com/magazam" },
+              ]).map(({ key, Icon, label, placeholder }) => (
+                <div key={key} className="space-y-1">
+                  <label className="text-[11px] font-medium flex items-center gap-1.5"
+                    style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+                    <Icon className="w-3 h-3" /> {label}
+                  </label>
+                  <input
+                    type="text"
+                    value={settings[key]}
+                    onChange={(e) => set(key, e.target.value)}
+                    placeholder={placeholder}
+                    className="w-full px-3 py-2 rounded-lg text-xs focus:outline-none"
+                    style={inputStyle(c)}
+                  />
+                </div>
+              ))}
+              <p className="text-[10px]" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+                URL girilen ikonlar vitrin footer&apos;ında aktifleşir; boş bırakılanlar gizlenir.
+              </p>
+            </AccordionSection>
+
             {fb && (
               <motion.div
                 initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
@@ -734,6 +942,34 @@ export default function TasarimPage() {
             <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
               Canlı Önizleme
             </span>
+
+            {/* Cihaz modu anahtarları */}
+            <div className="flex items-center gap-0.5 ml-3 p-0.5 rounded-lg"
+              style={{ background: c.hover, border: `1px solid ${c.borderSoft}` }}>
+              {([
+                { mode: "mobile"  as const, Icon: Smartphone, title: "Mobil (375px)" },
+                { mode: "tablet"  as const, Icon: Tablet,     title: "Tablet (768px)" },
+                { mode: "desktop" as const, Icon: Monitor,    title: "Masaüstü (tam genişlik)" },
+              ]).map(({ mode, Icon, title }) => {
+                const active = device === mode;
+                return (
+                  <button
+                    key={mode}
+                    onClick={() => setDevice(mode)}
+                    title={title}
+                    className="w-7 h-7 rounded-md flex items-center justify-center transition-colors duration-200"
+                    style={{
+                      background: active ? c.cardBg : "transparent",
+                      color: active ? c.accentText : c.textSubtle,
+                      boxShadow: active ? c.shadow : "none",
+                    }}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                  </button>
+                );
+              })}
+            </div>
+
             {activeStore?.custom_domain && (
               <span className="text-[10px] font-mono ml-auto" style={{ color: c.textSubtle }}>
                 {activeStore.custom_domain}
@@ -741,20 +977,31 @@ export default function TasarimPage() {
             )}
           </div>
 
-          {/* Tarayıcı çerçevesi */}
-          <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${c.border}`, boxShadow: c.shadowMd }}>
-            <div className="flex items-center gap-3 px-4 py-2.5" style={{ background: c.cardBgSoft, borderBottom: `1px solid ${c.borderSoft}` }}>
-              <div className="flex gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#F87171" }} />
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#FBBF24" }} />
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#34D399" }} />
+          {/* Tarayıcı/cihaz çerçevesi — mod değişimi pürüzsüz animasyonla */}
+          <div
+            className="mx-auto w-full transition-all duration-500 ease-out"
+            style={{ maxWidth: device === "mobile" ? 375 : device === "tablet" ? 768 : "100%" }}
+          >
+            <div
+              className="rounded-2xl overflow-hidden transition-shadow duration-500"
+              style={{
+                border: `1px solid ${c.border}`,
+                boxShadow: device === "mobile" ? "0 24px 64px rgba(0,0,0,0.22)" : c.shadowMd,
+              }}
+            >
+              <div className="flex items-center gap-3 px-4 py-2.5" style={{ background: c.cardBgSoft, borderBottom: `1px solid ${c.borderSoft}` }}>
+                <div className="flex gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#F87171" }} />
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#FBBF24" }} />
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#34D399" }} />
+                </div>
+                <div className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-mono truncate"
+                  style={{ background: c.inputBg, color: c.textSubtle }}>
+                  🔒 {activeStore?.custom_domain ?? `${(settings.storeName.trim() || "magazam").toLowerCase().replace(/\s+/g, "")}.optiefy.com`}
+                </div>
               </div>
-              <div className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-mono truncate"
-                style={{ background: c.inputBg, color: c.textSubtle }}>
-                🔒 {activeStore?.custom_domain ?? `${(settings.storeName.trim() || "magazam").toLowerCase().replace(/\s+/g, "")}.optiefy.com`}
-              </div>
+              <PreviewStore s={settings} store={activeStore} device={device} />
             </div>
-            <PreviewStore s={settings} store={activeStore} />
           </div>
         </div>
       </motion.div>

@@ -168,19 +168,25 @@ function CollectionInner({ store }: { store: Store }) {
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 md:gap-6">
-            {products.map((p, i) => (
-              <motion.div
+            {products.map((p, i) => {
+              // Amiral gemisi ürün (id === store.id) mağaza ana sayfasındaki detay
+              // görünümüne, tablo ürünleri kendi /urun/[id] rotasına köprülenir
+              const detailHref = p.id === store.id ? homeHref : `${base}/urun/${p.id}`;
+              return (
+              <motion.a
                 key={p.id}
+                href={detailHref}
                 initial={{ opacity: 0, y: 18 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: Math.min(i, 6) * 0.05, duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
                 whileHover={{ y: -5 }}
-                className="group overflow-hidden flex flex-col"
+                className="group overflow-hidden flex flex-col cursor-pointer"
                 style={{
                   background: t.cardBg,
                   border: `1px solid ${t.borderColor}`,
                   borderRadius: layout === "luxury" ? "4px" : "20px",
+                  textDecoration: "none",
                 }}
               >
                 {/* Görsel — kusursuz kare, object-cover */}
@@ -215,7 +221,12 @@ function CollectionInner({ store }: { store: Store }) {
                     </p>
                     <motion.button
                       whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }}
-                      onClick={() => handleAdd(p)}
+                      onClick={(e) => {
+                        // Kart bir <a> — sepete ekleme, detay sayfasına gitmesin
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleAdd(p);
+                      }}
                       title="Sepete Ekle"
                       className="w-9 h-9 flex items-center justify-center flex-shrink-0"
                       style={{ background: t.solidBtn, color: t.solidBtnText, borderRadius: t.btnRadius, boxShadow: `0 4px 14px ${t.accentGlow}` }}
@@ -224,8 +235,9 @@ function CollectionInner({ store }: { store: Store }) {
                     </motion.button>
                   </div>
                 </div>
-              </motion.div>
-            ))}
+              </motion.a>
+              );
+            })}
           </div>
         )}
       </main>

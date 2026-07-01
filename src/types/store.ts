@@ -23,6 +23,11 @@ export type StoreThemeSettings = {
   hero_subtitle?:     string | null; // hero alt açıklama override
   hero_overlay?:      number | null; // 0–90, hero görseli üzerine ek karartma yüzdesi
   logo_url?:          string | null; // https URL veya data:image/... — metin logo yerine geçer
+  show_countdown?:        boolean | null; // duyuru barında flash-sale geri sayım sayacı
+  show_currency_selector?: boolean | null; // header'da para birimi dropdown'u (TRY/USD/AUD)
+  social_instagram?:  string | null; // footer sosyal ikon linkleri — boşsa ikon gizlenir
+  social_twitter?:    string | null;
+  social_facebook?:   string | null;
 };
 
 export type Store = {

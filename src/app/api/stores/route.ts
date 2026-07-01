@@ -59,6 +59,18 @@ function sanitizeThemeSettings(raw: unknown): Record<string, unknown> | null {
     (/^https?:\/\//.test(src.logo_url) || src.logo_url.startsWith("data:image/")) &&
     src.logo_url.length <= 1_500_000
   ) out.logo_url = src.logo_url;
+
+  // Aciliyet sayacı + para birimi seçici görünürlüğü
+  if (typeof src.show_countdown === "boolean")         out.show_countdown = src.show_countdown;
+  if (typeof src.show_currency_selector === "boolean") out.show_currency_selector = src.show_currency_selector;
+
+  // Sosyal medya linkleri — yalnızca http(s) URL kabul edilir
+  const isHttpUrl = (v: unknown): v is string =>
+    typeof v === "string" && /^https?:\/\//.test(v) && v.length <= 300;
+  if (isHttpUrl(src.social_instagram)) out.social_instagram = src.social_instagram;
+  if (isHttpUrl(src.social_twitter))   out.social_twitter   = src.social_twitter;
+  if (isHttpUrl(src.social_facebook))  out.social_facebook  = src.social_facebook;
+
   return out;
 }
 
