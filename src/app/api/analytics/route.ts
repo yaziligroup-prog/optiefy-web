@@ -1,12 +1,9 @@
 /**
  * GET /api/analytics?from=ISO&to=ISO
- * Tarih aralığına göre filtrelenmiş analitik + dönüşüm hunisi verir.
+ * Tarih aralığına göre filtrelenmiş analitik + dönüşüm hunisi.
  *
- * Yanıt:
- *   {
- *     hasData, days, totalViews, totalVisitors, liveVisitors,
- *     funnel: { views, addToCart, checkout, purchases }
- *   }
+ * Canlı ziyaretçi her zaman son 5 dk'dan bağımsız sorgulanır —
+ * tarih filtresinden etkilenmez.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
@@ -19,7 +16,7 @@ export async function GET(req: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll()  { return cookieStore.getAll(); },
+        getAll()   { return cookieStore.getAll(); },
         setAll(cs) { cs.forEach(({ name, value, options }) => cookieStore.set(name, value, options)); },
       },
     },
@@ -39,7 +36,16 @@ export async function GET(req: NextRequest) {
   const sinceISO = new Date(since).toISOString();
   const untilISO = new Date(until).toISOString();
 
-  // Tarih aralığındaki tüm etkinlikler
+  // ── Canlı ziyaretçi: DAIMA son 5 dk — tarih filtresinden bağımsız ──
+  const liveSinceISO = new Date(now - 5 * 60_000).toISOString();
+  const { data: liveRows } = await supabase
+    .from("page_views")
+    .select("ip_address")
+    .gte("created_at", liveSinceISO)
+    .limit(500);
+  const liveVisitors = new Set((liveRows ?? []).map((r) => r.ip_address as string)).size;
+
+  // ── Seçili dönem analitiği ──
   const { data: rows, error } = await supabase
     .from("page_views")
     .select("created_at, ip_address, event_type")
@@ -50,7 +56,7 @@ export async function GET(req: NextRequest) {
 
   if (error || !rows) {
     return NextResponse.json({
-      hasData: false, days: [], totalViews: 0, totalVisitors: 0, liveVisitors: 0,
+      hasData: false, days: [], totalViews: 0, totalVisitors: 0, liveVisitors,
       funnel: { views: 0, addToCart: 0, checkout: 0, purchases: 0 },
     });
   }
@@ -66,9 +72,7 @@ export async function GET(req: NextRequest) {
     days.push({ key, views: 0, ips: new Set() });
   }
 
-  const globalIps  = new Set<string>();
-  const liveIps    = new Set<string>();
-  const liveSince  = now - 5 * 60_000;
+  const globalIps = new Set<string>();
   let funnelViews = 0, funnelCart = 0, funnelCheckout = 0;
 
   for (const r of rows) {
@@ -87,11 +91,9 @@ export async function GET(req: NextRequest) {
     } else if (eventType === "checkout") {
       funnelCheckout++;
     }
-
-    if (t >= liveSince && eventType === "view") liveIps.add(ip);
   }
 
-  // Dönem içindeki tamamlanan sipariş sayısı (iptal edilenler hariç)
+  // Dönem içindeki tamamlanan sipariş sayısı
   const { count: purchasesCount } = await supabase
     .from("orders")
     .select("id", { count: "exact", head: true })
@@ -104,12 +106,12 @@ export async function GET(req: NextRequest) {
     days:          days.map((d) => ({ key: d.key, views: d.views, visitors: d.ips.size })),
     totalViews:    funnelViews,
     totalVisitors: globalIps.size,
-    liveVisitors:  liveIps.size,
+    liveVisitors,                    // ← her zaman son 5 dk, filtreden bağımsız
     funnel: {
-      views:      funnelViews,
-      addToCart:  funnelCart,
-      checkout:   funnelCheckout,
-      purchases:  purchasesCount ?? 0,
+      views:     funnelViews,
+      addToCart: funnelCart,
+      checkout:  funnelCheckout,
+      purchases: purchasesCount ?? 0,
     },
   });
 }

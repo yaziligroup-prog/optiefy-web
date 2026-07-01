@@ -6,31 +6,30 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   CircleDollarSign, Clock, ShoppingBag, CheckCircle2,
   ArrowUpRight, AlertTriangle, Sparkles, Zap, MoreHorizontal, RefreshCw, Inbox, BarChart3,
-  Calendar, ChevronDown,
+  Calendar, ChevronDown, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import type { OrderWithItems, OrderStatus } from "@/types/order";
 import {
   usePanelTheme, PANEL_DISPLAY_FONT, PANEL_BODY_FONT, type PanelPalette,
 } from "./_lib/theme";
-
 import type { RealAnalytics } from "./_components/AnalyticsCharts";
 
 const AnalyticsCharts = dynamic(() => import("./_components/AnalyticsCharts"), {
-  ssr: false,
-  loading: () => null,
+  ssr: false, loading: () => null,
 });
 
 // ─── Tarih aralığı ──────────────────────────────────────────────────────────────
 
-type PeriodKey = "today" | "yesterday" | "7d" | "14d" | "custom";
+type PeriodKey = "today" | "yesterday" | "7d" | "14d" | "30d" | "custom";
 
 const PERIODS: { key: PeriodKey; label: string }[] = [
   { key: "today",     label: "Bugün" },
   { key: "yesterday", label: "Dün" },
   { key: "7d",        label: "Son 7 Gün" },
   { key: "14d",       label: "Son 14 Gün" },
-  { key: "custom",    label: "Özel" },
+  { key: "30d",       label: "Son 30 Gün" },
+  { key: "custom",    label: "Özel Aralık" },
 ];
 
 function getPeriodDates(
@@ -40,7 +39,6 @@ function getPeriodDates(
 ): { from: string; to: string } {
   const now   = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
   switch (period) {
     case "today":
       return { from: today.toISOString(), to: now.toISOString() };
@@ -53,9 +51,11 @@ function getPeriodDates(
       return { from: new Date(now.getTime() - 7 * 86_400_000).toISOString(), to: now.toISOString() };
     case "14d":
       return { from: new Date(now.getTime() - 14 * 86_400_000).toISOString(), to: now.toISOString() };
+    case "30d":
+      return { from: new Date(now.getTime() - 30 * 86_400_000).toISOString(), to: now.toISOString() };
     case "custom": {
       const from = customFrom
-        ? new Date(customFrom).toISOString()
+        ? new Date(customFrom + "T00:00:00").toISOString()
         : new Date(now.getTime() - 7 * 86_400_000).toISOString();
       const to = customTo
         ? new Date(customTo + "T23:59:59").toISOString()
@@ -65,130 +65,325 @@ function getPeriodDates(
   }
 }
 
-// ─── DateRangePicker bileşeni ────────────────────────────────────────────────────
+// ─── MiniCalendar sabitleri ──────────────────────────────────────────────────────
+
+const TR_MONTHS = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
+const TR_DAYS   = ["Pt","Sa","Ça","Pe","Cu","Ct","Pz"];
+
+// Tarih → yerel YYYY-MM-DD (UTC timezone karışıklığı olmadan)
+function localDateStr(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function formatDateLabel(s: string) {
+  if (!s) return null;
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("tr-TR", { day: "numeric", month: "short", year: "2-digit" });
+}
+
+// ─── MiniCalendar bileşeni ───────────────────────────────────────────────────────
+
+function MiniCalendar({
+  fromDate, toDate, onFromChange, onToChange, c,
+}: {
+  fromDate: string; toDate: string;
+  onFromChange: (v: string) => void; onToChange: (v: string) => void;
+  c: PanelPalette;
+}) {
+  const today = new Date();
+  const [viewYear,  setViewYear]  = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const [hovered,   setHovered]   = useState<string | null>(null);
+  const todayStr = localDateStr(today);
+
+  const weeks = useMemo(() => {
+    const firstDay = new Date(viewYear, viewMonth, 1);
+    const lastDay  = new Date(viewYear, viewMonth + 1, 0);
+    const startDow = (firstDay.getDay() + 6) % 7; // Pazartesi = 0
+    const cells: (Date | null)[] = Array(startDow).fill(null);
+    for (let d = 1; d <= lastDay.getDate(); d++) {
+      cells.push(new Date(viewYear, viewMonth, d));
+    }
+    while (cells.length % 7 !== 0) cells.push(null);
+    const result: (Date | null)[][] = [];
+    for (let i = 0; i < cells.length; i += 7) result.push(cells.slice(i, i + 7));
+    return result;
+  }, [viewYear, viewMonth]);
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewYear((y) => y - 1); setViewMonth(11); }
+    else setViewMonth((m) => m - 1);
+  };
+  const nextMonth = () => {
+    if (viewMonth === 11) { setViewYear((y) => y + 1); setViewMonth(0); }
+    else setViewMonth((m) => m + 1);
+  };
+
+  const handleClick = (d: Date) => {
+    const s = localDateStr(d);
+    if (!fromDate || (fromDate && toDate)) {
+      onFromChange(s); onToChange("");
+    } else {
+      if (s < fromDate)      { onFromChange(s); onToChange(""); }
+      else if (s === fromDate) { onFromChange(""); onToChange(""); }
+      else                   { onToChange(s); }
+    }
+  };
+
+  // Range hesaplaması (hover önizlemeli)
+  const effectiveTo = toDate || (hovered && fromDate && hovered > fromDate ? hovered : null);
+  const [lo, hi] = fromDate && effectiveTo
+    ? [fromDate, effectiveTo]
+    : [null, null];
+
+  return (
+    <div className="select-none">
+      {/* Seçili aralık göstergesi */}
+      <div className="flex items-center gap-1.5 mb-4">
+        <div
+          className="flex-1 px-2.5 py-1.5 rounded-lg text-center text-[11px] font-semibold transition-all"
+          style={{
+            background: fromDate ? "#7C3AED1A" : c.hover,
+            color:      fromDate ? "#A78BFA"   : c.textSubtle,
+            border:     `1px solid ${fromDate ? "#7C3AED35" : c.borderSoft}`,
+            fontFamily: PANEL_BODY_FONT,
+          }}
+        >
+          {fromDate ? formatDateLabel(fromDate) : "Başlangıç"}
+        </div>
+        <span className="text-[10px] font-bold" style={{ color: c.textSubtle }}>→</span>
+        <div
+          className="flex-1 px-2.5 py-1.5 rounded-lg text-center text-[11px] font-semibold transition-all"
+          style={{
+            background: toDate ? "#7C3AED1A" : c.hover,
+            color:      toDate ? "#A78BFA"   : c.textSubtle,
+            border:     `1px solid ${toDate ? "#7C3AED35" : c.borderSoft}`,
+            fontFamily: PANEL_BODY_FONT,
+          }}
+        >
+          {toDate ? formatDateLabel(toDate) : "Bitiş"}
+        </div>
+      </div>
+
+      {/* Ay navigasyonu */}
+      <div className="flex items-center justify-between mb-3">
+        <button
+          onClick={prevMonth}
+          className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-60"
+          style={{ background: c.hover }}
+        >
+          <ChevronLeft className="w-3.5 h-3.5" style={{ color: c.textMuted }} />
+        </button>
+        <p className="text-xs font-bold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
+          {TR_MONTHS[viewMonth]} {viewYear}
+        </p>
+        <button
+          onClick={nextMonth}
+          className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-60"
+          style={{ background: c.hover }}
+        >
+          <ChevronRight className="w-3.5 h-3.5" style={{ color: c.textMuted }} />
+        </button>
+      </div>
+
+      {/* Gün başlıkları */}
+      <div className="grid grid-cols-7 mb-1">
+        {TR_DAYS.map((d) => (
+          <div key={d} className="text-center text-[10px] font-bold py-0.5"
+            style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>{d}</div>
+        ))}
+      </div>
+
+      {/* Takvim ızgarası */}
+      {weeks.map((week, wi) => (
+        <div key={wi} className="grid grid-cols-7">
+          {week.map((day, di) => {
+            if (!day) return <div key={di} className="h-8" />;
+            const s         = localDateStr(day);
+            const isFrom    = s === fromDate;
+            const isTo      = s === toDate;
+            const inRange   = !!(lo && hi && s > lo && s < hi);
+            const isEndpt   = isFrom || isTo;
+            const isHov     = s === hovered && !isEndpt && !inRange;
+            const isToday   = s === todayStr;
+
+            // Yatay range bandı: aralık içi hücreler için arka plan
+            const rangeEdge = isFrom && hi ? "range-start"
+              : isTo && lo ? "range-end" : inRange ? "in-range" : "";
+
+            return (
+              <div
+                key={di}
+                className="relative flex items-center justify-center py-0.5"
+                style={{
+                  background: inRange ? "#7C3AED12" : "transparent",
+                  borderRadius:
+                    rangeEdge === "range-start" ? "50% 0 0 50%"
+                    : rangeEdge === "range-end" ? "0 50% 50% 0"
+                    : undefined,
+                }}
+              >
+                <button
+                  onClick={() => handleClick(day)}
+                  onMouseEnter={() => setHovered(s)}
+                  onMouseLeave={() => setHovered(null)}
+                  className="relative w-7 h-7 text-[11px] flex items-center justify-center rounded-full transition-all"
+                  style={{
+                    background: isEndpt ? "#7C3AED"
+                      : isHov   ? c.hover
+                      : "transparent",
+                    color:      isEndpt ? "#fff"
+                      : inRange ? "#A78BFA"
+                      : isToday ? "#7C3AED"
+                      : c.text,
+                    fontWeight: isEndpt || isToday ? 700 : 400,
+                    fontFamily: PANEL_BODY_FONT,
+                    boxShadow:  isEndpt ? "0 0 0 2px #7C3AED40" : undefined,
+                  }}
+                >
+                  {day.getDate()}
+                  {/* Bugün işareti */}
+                  {isToday && !isEndpt && (
+                    <span
+                      className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                      style={{ background: "#7C3AED" }}
+                    />
+                  )}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+
+      {/* Ipucu */}
+      <p className="text-center text-[10px] mt-2.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+        {!fromDate
+          ? "Başlangıç tarihini seçin"
+          : !toDate
+          ? "Bitiş tarihini seçin"
+          : "Aralığı uygulamak için ▼"}
+      </p>
+    </div>
+  );
+}
+
+// ─── DateRangePicker ─────────────────────────────────────────────────────────────
 
 function DateRangePicker({
-  period, setPeriod, customFrom, setCustomFrom, customTo, setCustomTo,
+  period, onSelectPeriod,
+  customFrom, setCustomFrom,
+  customTo,   setCustomTo,
   onApply, c,
 }: {
   period: PeriodKey;
-  setPeriod: (p: PeriodKey) => void;
-  customFrom: string;
-  setCustomFrom: (v: string) => void;
-  customTo: string;
-  setCustomTo: (v: string) => void;
+  onSelectPeriod: (p: PeriodKey) => void;
+  customFrom: string; setCustomFrom: (v: string) => void;
+  customTo:   string; setCustomTo:   (v: string) => void;
   onApply: () => void;
   c: PanelPalette;
 }) {
   const [open, setOpen] = useState(false);
-  const selectedLabel = PERIODS.find((p) => p.key === period)?.label ?? "Son 14 Gün";
+  const selectedLabel   = PERIODS.find((p) => p.key === period)?.label ?? "Son 14 Gün";
 
   return (
     <div className="relative">
+      {/* Trigger butonu */}
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all"
         style={{
           background: c.hover,
-          border: `1px solid ${c.border}`,
-          color: c.textMuted,
+          border:     `1px solid ${c.border}`,
+          color:      c.textMuted,
           fontFamily: PANEL_BODY_FONT,
         }}
       >
         <Calendar className="w-3.5 h-3.5" />
         {selectedLabel}
-        <ChevronDown className="w-3.5 h-3.5" style={{ opacity: 0.6 }} />
+        <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
+          <ChevronDown className="w-3.5 h-3.5" style={{ opacity: 0.6 }} />
+        </motion.div>
       </button>
 
       <AnimatePresence>
         {open && (
           <>
-            {/* Backdrop */}
             <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-
-            {/* Dropdown */}
             <motion.div
               initial={{ opacity: 0, y: 6, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 6, scale: 0.97 }}
               transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute right-0 top-full mt-2 z-50 min-w-[220px] rounded-2xl p-2 shadow-2xl"
+              className="absolute right-0 top-full mt-2 z-50 rounded-2xl overflow-hidden shadow-2xl"
               style={{
+                width:          period === "custom" ? 296 : 200,
                 background:     c.cardBg,
                 border:         `1px solid ${c.border}`,
-                backdropFilter: "blur(20px)",
+                backdropFilter: "blur(24px)",
+                transition:     "width 0.22s ease",
               }}
             >
-              {PERIODS.map((p) => (
-                <button
-                  key={p.key}
-                  onClick={() => {
-                    setPeriod(p.key);
-                    if (p.key !== "custom") { setOpen(false); onApply(); }
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm text-left transition-all"
-                  style={{
-                    background: period === p.key ? `#7C3AED18` : "transparent",
-                    color:      period === p.key ? "#7C3AED" : c.text,
-                    fontFamily: PANEL_BODY_FONT,
-                    fontWeight: period === p.key ? 600 : 400,
-                  }}
-                >
-                  {p.key === "custom" && <Calendar className="w-3.5 h-3.5 flex-shrink-0" />}
-                  {p.label}
-                  {period === p.key && p.key !== "custom" && (
-                    <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: "#7C3AED" }} />
-                  )}
-                </button>
-              ))}
+              {/* Preset period butonları */}
+              <div className="p-2 space-y-0.5">
+                {PERIODS.map((p) => (
+                  <button
+                    key={p.key}
+                    onClick={() => {
+                      onSelectPeriod(p.key);
+                      if (p.key !== "custom") { onApply(); setOpen(false); }
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm text-left transition-all"
+                    style={{
+                      background: period === p.key ? "#7C3AED18" : "transparent",
+                      color:      period === p.key ? "#7C3AED"   : c.text,
+                      fontFamily: PANEL_BODY_FONT,
+                      fontWeight: period === p.key ? 600 : 400,
+                    }}
+                  >
+                    <span className="flex items-center gap-2">
+                      {p.key === "custom" && <Calendar className="w-3 h-3" style={{ opacity: 0.6 }} />}
+                      {p.label}
+                    </span>
+                    {period === p.key && p.key !== "custom" && (
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#7C3AED" }} />
+                    )}
+                  </button>
+                ))}
+              </div>
 
-              {/* Özel tarih aralığı */}
+              {/* Özel takvim — sadece "custom" seçilince görünür */}
               <AnimatePresence>
                 {period === "custom" && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.22, ease: [0.04, 0.62, 0.23, 0.98] }}
                     className="overflow-hidden"
                   >
-                    <div className="mt-1 mx-1 p-3 rounded-xl space-y-2.5" style={{ background: c.hover }}>
-                      <div>
-                        <p className="text-[11px] font-semibold mb-1.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>Başlangıç</p>
-                        <input
-                          type="date"
-                          value={customFrom}
-                          onChange={(e) => setCustomFrom(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg text-sm outline-none"
-                          style={{
-                            background: c.cardBg,
-                            border:     `1px solid ${c.border}`,
-                            color:      c.text,
-                            fontFamily: PANEL_BODY_FONT,
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-semibold mb-1.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>Bitiş</p>
-                        <input
-                          type="date"
-                          value={customTo}
-                          onChange={(e) => setCustomTo(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg text-sm outline-none"
-                          style={{
-                            background: c.cardBg,
-                            border:     `1px solid ${c.border}`,
-                            color:      c.text,
-                            fontFamily: PANEL_BODY_FONT,
-                          }}
-                        />
-                      </div>
+                    <div
+                      className="mx-2 mb-2 p-3 rounded-xl"
+                      style={{ background: c.hover, border: `1px solid ${c.borderSoft}` }}
+                    >
+                      <MiniCalendar
+                        fromDate={customFrom}
+                        toDate={customTo}
+                        onFromChange={setCustomFrom}
+                        onToChange={setCustomTo}
+                        c={c}
+                      />
                       <button
                         onClick={() => { onApply(); setOpen(false); }}
                         disabled={!customFrom || !customTo}
-                        className="w-full py-2 rounded-lg text-sm font-bold transition-opacity disabled:opacity-40"
-                        style={{ background: "#7C3AED", color: "#fff", fontFamily: PANEL_BODY_FONT }}
+                        className="w-full mt-3 py-2.5 rounded-xl text-sm font-bold transition-all disabled:opacity-35"
+                        style={{
+                          background: "linear-gradient(135deg,#7C3AED,#2563EB)",
+                          color:      "#fff",
+                          fontFamily: PANEL_BODY_FONT,
+                        }}
                       >
-                        Uygula
+                        {customFrom && customTo ? "Aralığı Uygula" : "Tarihleri Seçin"}
                       </button>
                     </div>
                   </motion.div>
@@ -213,8 +408,7 @@ function timeAgo(iso: string): string {
   if (m < 60) return `${m} dk önce`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h} saat önce`;
-  const d = Math.floor(h / 24);
-  return `${d} gün önce`;
+  return `${Math.floor(h / 24)} gün önce`;
 }
 
 function isToday(iso: string): boolean {
@@ -269,23 +463,33 @@ function StatCard({
 
 export default function DashboardPage() {
   const { c, isDark } = usePanelTheme();
-  const [orders, setOrders]             = useState<OrderWithItems[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [analyticsLoading, setALoading] = useState(true);
-  const [today, setToday]               = useState("");
-  const [analytics, setAnalytics]       = useState<RealAnalytics | null>(null);
+  const [orders,    setOrders]    = useState<OrderWithItems[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [aLoading,  setALoading]  = useState(true);
+  const [today,     setToday]     = useState("");
+  const [analytics, setAnalytics] = useState<RealAnalytics | null>(null);
 
-  // Tarih aralığı seçici
-  const [period, setPeriod]           = useState<PeriodKey>("14d");
-  const [customFrom, setCustomFrom]   = useState("");
-  const [customTo, setCustomTo]       = useState("");
-  // Uygulanan aralık (Apply tıklanınca veya preset seçilince güncellenir)
+  // Tarih seçici state
+  const [period,      setPeriod]      = useState<PeriodKey>("14d");
+  const [customFrom,  setCustomFrom]  = useState("");
+  const [customTo,    setCustomTo]    = useState("");
   const [appliedRange, setAppliedRange] = useState<{ from: string; to: string }>(
     () => getPeriodDates("14d"),
   );
 
-  const applyCurrentPeriod = useCallback(() => {
-    setAppliedRange(getPeriodDates(period, customFrom, customTo));
+  // Preset seçilince hemen uygula
+  const handleSelectPeriod = useCallback((p: PeriodKey) => {
+    setPeriod(p);
+    if (p !== "custom") setAppliedRange(getPeriodDates(p));
+  }, []);
+
+  // Özel aralık "Uygula" butonu
+  const applyCustom = useCallback(() => {
+    if (period === "custom" && customFrom && customTo) {
+      setAppliedRange(getPeriodDates("custom", customFrom, customTo));
+    } else if (period !== "custom") {
+      setAppliedRange(getPeriodDates(period));
+    }
   }, [period, customFrom, customTo]);
 
   const fetchOrders = useCallback(async () => {
@@ -311,29 +515,19 @@ export default function DashboardPage() {
     finally { setALoading(false); }
   }, []);
 
-  // İlk yükleme
   useEffect(() => {
     setToday(new Date().toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }));
     fetchOrders();
   }, [fetchOrders]);
 
-  // Seçilen tarih aralığı değişince analitiği çek + 30sn yenile
+  // appliedRange değişince analitiği çek + 30sn otomatik yenile
   useEffect(() => {
     fetchAnalytics(appliedRange.from, appliedRange.to);
     const id = setInterval(() => fetchAnalytics(appliedRange.from, appliedRange.to), 30_000);
     return () => clearInterval(id);
   }, [fetchAnalytics, appliedRange]);
 
-  // period preset seçilince hemen uygula
-  const handleSelectPeriod = useCallback((p: PeriodKey) => {
-    setPeriod(p);
-    if (p !== "custom") {
-      const range = getPeriodDates(p);
-      setAppliedRange(range);
-    }
-  }, []);
-
-  // ── Gerçek istatistikler ──
+  // ── İstatistikler ──
   const active         = orders.filter((o) => o.status !== "cancelled");
   const revenue        = active.reduce((s, o) => s + Number(o.total ?? 0), 0);
   const pendingCount   = orders.filter((o) => o.status === "preparing" || o.status === "pending").length;
@@ -350,10 +544,10 @@ export default function DashboardPage() {
 
   const recent = orders.slice(0, 6);
 
-  // Seçili dönem etiketi (grafik altlığı için)
+  // Period etiket göstergesi
   const periodLabel = useMemo(() => {
     if (period === "custom" && customFrom && customTo)
-      return `${customFrom} – ${customTo}`;
+      return `${formatDateLabel(customFrom)} – ${formatDateLabel(customTo)}`;
     return PERIODS.find((p) => p.key === period)?.label ?? "";
   }, [period, customFrom, customTo]);
 
@@ -365,7 +559,8 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <motion.span animate={{ scale: [1, 1.3, 1] }} transition={{ duration: 1.8, repeat: Infinity }} className="w-2 h-2 rounded-full" style={{ background: "#22C55E" }} />
+              <motion.span animate={{ scale: [1, 1.3, 1] }} transition={{ duration: 1.8, repeat: Infinity }}
+                className="w-2 h-2 rounded-full" style={{ background: "#22C55E" }} />
               <span className="text-xs font-semibold" style={{ color: "#16A34A", fontFamily: PANEL_BODY_FONT }}>Mağazanız canlı</span>
               {today && <span className="text-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>· {today}</span>}
             </div>
@@ -391,32 +586,33 @@ export default function DashboardPage() {
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.24 }}>
         <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg,#7C3AED,#2563EB)" }}>
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+              style={{ background: "linear-gradient(135deg,#7C3AED,#2563EB)" }}>
               <BarChart3 className="w-3.5 h-3.5 text-white" />
             </div>
             <h2 className="text-base font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Mağaza Analitiği</h2>
-            <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: c.hover, color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+            <span className="text-xs px-2 py-0.5 rounded-full"
+              style={{ background: c.hover, color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
               {periodLabel}
             </span>
           </div>
 
-          {/* Tarih Seçici */}
           <DateRangePicker
             period={period}
-            setPeriod={handleSelectPeriod}
+            onSelectPeriod={handleSelectPeriod}
             customFrom={customFrom}
             setCustomFrom={setCustomFrom}
             customTo={customTo}
             setCustomTo={setCustomTo}
-            onApply={applyCurrentPeriod}
+            onApply={applyCustom}
             c={c}
           />
         </div>
 
-        {analyticsLoading ? (
+        {aLoading ? (
           <div className="space-y-5">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {[0, 1, 2, 3].map((i) => (
+              {[0,1,2,3].map((i) => (
                 <div key={i} className="h-28 rounded-2xl animate-pulse" style={{ background: c.hover }} />
               ))}
             </div>
@@ -440,13 +636,13 @@ export default function DashboardPage() {
       {/* Orders + AI */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
 
-        {/* Orders table */}
         <motion.div
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
           className="xl:col-span-2 rounded-2xl overflow-hidden"
           style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadow }}
         >
-          <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${c.borderSoft}` }}>
+          <div className="flex items-center justify-between px-5 py-4"
+            style={{ borderBottom: `1px solid ${c.borderSoft}` }}>
             <div>
               <h2 className="text-base font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Son Gelen Siparişler</h2>
               <p className="text-xs mt-0.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
@@ -457,13 +653,14 @@ export default function DashboardPage() {
 
           {loading ? (
             <div className="p-5 space-y-3">
-              {[0, 1, 2, 3].map((i) => (
+              {[0,1,2,3].map((i) => (
                 <div key={i} className="h-12 rounded-xl animate-pulse" style={{ background: c.hover }} />
               ))}
             </div>
           ) : recent.length === 0 ? (
             <div className="flex flex-col items-center justify-center text-center py-16 px-6">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4" style={{ background: c.cardBgSoft, border: `1px solid ${c.border}` }}>
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+                style={{ background: c.cardBgSoft, border: `1px solid ${c.border}` }}>
                 <Inbox className="w-6 h-6" style={{ color: c.textSubtle }} />
               </div>
               <p className="text-sm font-semibold mb-1" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Henüz sipariş yok</p>
@@ -476,8 +673,9 @@ export default function DashboardPage() {
               <table className="w-full" style={{ borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${c.borderSoft}` }}>
-                    {["Müşteri", "Ürün", "Tutar", "Durum", ""].map((h, i) => (
-                      <th key={i} className="text-left px-5 py-3 text-[11px] font-bold uppercase tracking-wider" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT, whiteSpace: "nowrap" }}>{h}</th>
+                    {["Müşteri","Ürün","Tutar","Durum",""].map((h, i) => (
+                      <th key={i} className="text-left px-5 py-3 text-[11px] font-bold uppercase tracking-wider"
+                        style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -487,11 +685,9 @@ export default function DashboardPage() {
                     const firstItem = o.order_items?.[0]?.product_name ?? "—";
                     const extra = (o.order_items?.length ?? 0) - 1;
                     return (
-                      <motion.tr
-                        key={o.id}
+                      <motion.tr key={o.id}
                         initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 + i * 0.05 }}
-                        style={{ borderBottom: i < recent.length - 1 ? `1px solid ${c.borderSoft}` : "none" }}
-                      >
+                        style={{ borderBottom: i < recent.length - 1 ? `1px solid ${c.borderSoft}` : "none" }}>
                         <td className="px-5 py-3.5">
                           <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0"
@@ -521,7 +717,8 @@ export default function DashboardPage() {
                           </span>
                         </td>
                         <td className="px-5 py-3.5">
-                          <button className="w-7 h-7 rounded-lg flex items-center justify-center hover:opacity-70 transition-opacity" style={{ color: c.textSubtle }}>
+                          <button className="w-7 h-7 rounded-lg flex items-center justify-center hover:opacity-70 transition-opacity"
+                            style={{ color: c.textSubtle }}>
                             <MoreHorizontal className="w-4 h-4" />
                           </button>
                         </td>
@@ -541,31 +738,31 @@ export default function DashboardPage() {
           style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadow }}
         >
           <div className="flex items-center gap-2 mb-1">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg,#7C3AED,#EC4899)" }}>
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+              style={{ background: "linear-gradient(135deg,#7C3AED,#EC4899)" }}>
               <Sparkles className="w-3.5 h-3.5 text-white" />
             </div>
             <h2 className="text-base font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>AI Önerileri</h2>
           </div>
           <p className="text-xs mb-5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>İşletmenizi büyütmek için akıllı aksiyonlar</p>
-
           <div className="space-y-3">
             {SUGGESTIONS.map((s, i) => {
               const Icon = s.icon;
               return (
-                <motion.div
-                  key={i}
+                <motion.div key={i}
                   initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.42 + i * 0.08 }}
                   className="rounded-xl p-3.5"
-                  style={{ background: c.cardBgSoft, border: `1px solid ${c.borderSoft}` }}
-                >
+                  style={{ background: c.cardBgSoft, border: `1px solid ${c.borderSoft}` }}>
                   <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: `${s.color}18` }}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+                      style={{ background: `${s.color}18` }}>
                       <Icon className="w-4 h-4" style={{ color: s.color }} />
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold leading-snug mb-0.5" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>{s.title}</p>
                       <p className="text-xs leading-relaxed mb-2" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>{s.desc}</p>
-                      <button className="text-xs font-bold flex items-center gap-1 hover:gap-1.5 transition-all" style={{ color: s.color, fontFamily: PANEL_BODY_FONT }}>
+                      <button className="text-xs font-bold flex items-center gap-1 hover:gap-1.5 transition-all"
+                        style={{ color: s.color, fontFamily: PANEL_BODY_FONT }}>
                         {s.cta} <ArrowUpRight className="w-3 h-3" />
                       </button>
                     </div>
