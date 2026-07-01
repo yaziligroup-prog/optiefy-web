@@ -14,6 +14,7 @@ import { THEMES, type ThemeId } from "@/types/theme";
 import {
   usePanelTheme, PANEL_DISPLAY_FONT, PANEL_BODY_FONT, type PanelPalette,
 } from "../_lib/theme";
+import NewStoreWizard from "../_components/NewStoreWizard";
 
 function slugify(name: string): string {
   return name
@@ -35,6 +36,8 @@ export default function UrunlerPage() {
   const [copiedId, setCopiedId]     = useState<string | null>(null);
   const [toastMsg, setToastMsg]     = useState("");
   const [showToast, setShowToast]   = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
 
   // ── Supabase: mağazaları çek (eski mimariden korundu) ──
   const fetchStores = useCallback(async () => {
@@ -94,11 +97,21 @@ export default function UrunlerPage() {
     setTimeout(() => setCopiedId(null), 2200);
   };
 
+  // ── Sihirbaz yeni vitrin oluşturdu → listeyi tazele + karta odaklan ──
+  const handleWizardCreated = useCallback(async (storeId: string) => {
+    await fetchStores();
+    setHighlightId(storeId);
+    setToastMsg("Yeni vitriniz kataloğunuza eklendi ✓");
+    setShowToast(true);
+    setTimeout(() => setHighlightId(null), 2600);
+  }, [fetchStores]);
+
   const activeCount = stores.filter((s) => s.status === "active").length;
 
   return (
     <div className="max-w-6xl mx-auto">
       <Toast message={toastMsg} show={showToast} onHide={() => setShowToast(false)} />
+      <NewStoreWizard open={wizardOpen} onClose={() => setWizardOpen(false)} onCreated={handleWizardCreated} />
 
       {/* ── Header ── */}
       <motion.div
@@ -116,15 +129,14 @@ export default function UrunlerPage() {
           </p>
         </div>
 
-        <Link href="/">
-          <motion.span
-            whileHover={{ opacity: 0.85 }} whileTap={{ scale: 0.97 }}
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold"
-            style={{ background: c.ctaBg, color: c.ctaText, fontFamily: PANEL_BODY_FONT, boxShadow: c.shadowMd }}
-          >
-            <Plus className="w-4 h-4" /> Yeni Vitrin Üret
-          </motion.span>
-        </Link>
+        <motion.button
+          onClick={() => setWizardOpen(true)}
+          whileHover={{ opacity: 0.85 }} whileTap={{ scale: 0.97 }}
+          className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold"
+          style={{ background: c.ctaBg, color: c.ctaText, fontFamily: PANEL_BODY_FONT, boxShadow: c.shadowMd }}
+        >
+          <Plus className="w-4 h-4" /> Yeni Vitrin Üret
+        </motion.button>
       </motion.div>
 
       {/* ── States ── */}
@@ -141,7 +153,7 @@ export default function UrunlerPage() {
           ))}
         </div>
       ) : stores.length === 0 ? (
-        <EmptyState c={c} />
+        <EmptyState c={c} onCreate={() => setWizardOpen(true)} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
           {stores.map((store, i) => (
@@ -154,6 +166,7 @@ export default function UrunlerPage() {
               updating={updatingId === store.id}
               toggling={togglingId === store.id}
               copied={copiedId === store.id}
+              highlight={highlightId === store.id}
               onThemeChange={handleThemeChange}
               onStatusToggle={handleStatusToggle}
               onCopy={handleCopy}
@@ -168,7 +181,7 @@ export default function UrunlerPage() {
 // ─── Store card ─────────────────────────────────────────────────────────────────
 
 function StoreCard({
-  store, index, c, isDark, updating, toggling, copied, onThemeChange, onStatusToggle, onCopy,
+  store, index, c, isDark, updating, toggling, copied, highlight, onThemeChange, onStatusToggle, onCopy,
 }: {
   store: Store;
   index: number;
@@ -177,6 +190,7 @@ function StoreCard({
   updating: boolean;
   toggling: boolean;
   copied: boolean;
+  highlight: boolean;
   onThemeChange: (storeId: string, themeId: ThemeId) => void;
   onStatusToggle: (store: Store) => void;
   onCopy: (store: Store) => void;
@@ -192,14 +206,18 @@ function StoreCard({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.07 }}
+      initial={{ opacity: 0, y: 18 }}
+      animate={{
+        opacity: isLive ? 1 : 0.92,
+        y: 0,
+        boxShadow: highlight ? "0 0 0 3px rgba(168,85,247,0.55), 0 12px 40px rgba(124,58,237,0.3)" : c.shadow,
+      }}
+      transition={{ delay: index * 0.07 }}
       whileHover={{ y: -4 }}
       className="rounded-2xl overflow-hidden flex flex-col group"
       style={{
         background: c.cardBg,
-        border: `1px solid ${isLive ? "rgba(34,197,94,0.28)" : c.border}`,
-        boxShadow: c.shadow,
-        opacity: isLive ? 1 : 0.92,
+        border: `1px solid ${highlight ? "rgba(168,85,247,0.6)" : isLive ? "rgba(34,197,94,0.28)" : c.border}`,
       }}
     >
       {/* Görsel */}
@@ -424,7 +442,7 @@ function StoreCard({
 
 // ─── Empty state ────────────────────────────────────────────────────────────────
 
-function EmptyState({ c }: { c: PanelPalette }) {
+function EmptyState({ c, onCreate }: { c: PanelPalette; onCreate: () => void }) {
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.45 }}
@@ -450,15 +468,14 @@ function EmptyState({ c }: { c: PanelPalette }) {
         İlk ürününüzü ekleyerek başlayın. Tek bir fotoğraf yükleyin, yapay zeka saniyeler içinde profesyonel vitrininizi oluştursun.
       </p>
 
-      <Link href="/">
-        <motion.span
-          whileHover={{ opacity: 0.85 }} whileTap={{ scale: 0.97 }}
-          className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl text-sm font-semibold"
-          style={{ background: c.ctaBg, color: c.ctaText, fontFamily: PANEL_BODY_FONT, boxShadow: c.shadowMd }}
-        >
-          <Sparkles className="w-4 h-4" /> İlk Vitrini Oluştur <ArrowRight className="w-4 h-4" />
-        </motion.span>
-      </Link>
+      <motion.button
+        onClick={onCreate}
+        whileHover={{ opacity: 0.85 }} whileTap={{ scale: 0.97 }}
+        className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl text-sm font-semibold"
+        style={{ background: c.ctaBg, color: c.ctaText, fontFamily: PANEL_BODY_FONT, boxShadow: c.shadowMd }}
+      >
+        <Sparkles className="w-4 h-4" /> İlk Vitrini Oluştur <ArrowRight className="w-4 h-4" />
+      </motion.button>
     </motion.div>
   );
 }
