@@ -22,12 +22,23 @@ function seededVisitors(d: Date): number {
   return Math.round(base * dow);
 }
 
+// Gerçek analitik yanıtı (/api/analytics)
+export type RealAnalytics = {
+  hasData:       boolean;
+  days:          { key: string; views: number; visitors: number }[];
+  totalViews:    number;
+  totalVisitors: number;
+  liveVisitors:  number;
+};
+
 type DayPoint = {
   key: string; label: string; short: string;
   orders: number; revenue: number; visitors: number;
 };
 
-function buildSeries(orders: OrderWithItems[]): DayPoint[] {
+function buildSeries(orders: OrderWithItems[], real?: RealAnalytics | null): DayPoint[] {
+  const useReal = !!real?.hasData;
+  const realByKey = new Map((real?.days ?? []).map((d) => [d.key, d.views]));
   const days: DayPoint[] = [];
   const now = new Date();
   for (let i = 13; i >= 0; i--) {
@@ -39,7 +50,8 @@ function buildSeries(orders: OrderWithItems[]): DayPoint[] {
       key,
       label: d.toLocaleDateString("tr-TR", { day: "numeric", month: "long" }),
       short: d.toLocaleDateString("tr-TR", { day: "numeric", month: "short" }),
-      orders: 0, revenue: 0, visitors: seededVisitors(d),
+      orders: 0, revenue: 0,
+      visitors: useReal ? (realByKey.get(key) ?? 0) : seededVisitors(d),
     });
   }
   const idx = new Map(days.map((p, i) => [p.key, i]));
@@ -116,36 +128,41 @@ function ChartTooltip({ active, payload, label, c, suffix }: {
 
 // ─── Ana bileşen ────────────────────────────────────────────────────────────────
 export default function AnalyticsCharts({
-  orders, c,
+  orders, c, analytics,
 }: {
-  orders: OrderWithItems[]; c: PanelPalette;
+  orders: OrderWithItems[]; c: PanelPalette; analytics?: RealAnalytics | null;
 }) {
-  const series = useMemo(() => buildSeries(orders), [orders]);
+  const isReal = !!analytics?.hasData;
+  const series = useMemo(() => buildSeries(orders, analytics), [orders, analytics]);
 
   const totals = useMemo(() => {
-    const totalVisitors = series.reduce((s, p) => s + p.visitors, 0);
-    const totalOrders   = series.reduce((s, p) => s + p.orders, 0);
-    const totalRevenue  = series.reduce((s, p) => s + p.revenue, 0);
+    const totalOrders  = series.reduce((s, p) => s + p.orders, 0);
+    const totalRevenue = series.reduce((s, p) => s + p.revenue, 0);
+    // Gerçek modda benzersiz ziyaretçi global (server hesaplar); simülasyonda toplam
+    const totalVisitors = isReal ? (analytics?.totalVisitors ?? 0) : series.reduce((s, p) => s + p.visitors, 0);
     const conversion    = totalVisitors > 0 ? (totalOrders / totalVisitors) * 100 : 0;
-    // Son 7 gün vs önceki 7 gün ziyaretçi trendi
+    // Son 7 gün vs önceki 7 gün trafik trendi
     const last7  = series.slice(7).reduce((s, p) => s + p.visitors, 0);
     const prev7  = series.slice(0, 7).reduce((s, p) => s + p.visitors, 0);
     const visTrend = prev7 > 0 ? ((last7 - prev7) / prev7) * 100 : 0;
     return { totalVisitors, totalOrders, totalRevenue, conversion, visTrend };
-  }, [series]);
+  }, [series, isReal, analytics]);
 
-  // Canlı trafik — nazik dalgalanma (deterministik tabana ± oynama)
+  // Canlı trafik — gerçek modda server'dan (poll ile tazelenir), simülasyonda dalgalanma
   const liveBase = Math.max(3, Math.round(series[series.length - 1].visitors / 42));
-  const [live, setLive] = useState(liveBase);
+  const [simLive, setSimLive] = useState(liveBase);
   useEffect(() => {
+    if (isReal) return; // gerçek modda dalgalanma yok
     const id = setInterval(() => {
-      setLive(() => Math.max(1, liveBase + Math.round((Math.random() - 0.5) * 4)));
+      setSimLive(() => Math.max(1, liveBase + Math.round((Math.random() - 0.5) * 4)));
     }, 3200);
     return () => clearInterval(id);
-  }, [liveBase]);
+  }, [liveBase, isReal]);
+  const live = isReal ? (analytics?.liveVisitors ?? 0) : simLive;
 
   const axisStyle = { fontSize: 11, fontFamily: PANEL_BODY_FONT, fill: c.textSubtle };
   const maxOrders = Math.max(1, ...series.map((p) => p.orders));
+  const trafficSuffix = isReal ? " görüntüleme" : " ziyaretçi";
 
   return (
     <div className="space-y-5">
@@ -173,10 +190,15 @@ export default function AnalyticsCharts({
         >
           <div className="flex items-center justify-between mb-1">
             <h2 className="text-base font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Ziyaretçi Trafiği</h2>
-            <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: c.hover, color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Son 14 gün</span>
+            <span className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5"
+              style={{ background: c.hover, color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
+              {isReal
+                ? <><span className="w-1.5 h-1.5 rounded-full" style={{ background: "#22C55E" }} /> Gerçek veri</>
+                : "Son 14 gün"}
+            </span>
           </div>
           <p className="text-xs mb-5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-            Vitrinlerinize gelen günlük ziyaretçi akışı
+            {isReal ? "Vitrinlerinize gelen günlük sayfa görüntülemeleri" : "Örnek trafik verisi · ilk ziyaretlerle gerçek veriye döner"}
           </p>
           <div style={{ width: "100%", height: 240 }}>
             <ResponsiveContainer>
@@ -189,8 +211,8 @@ export default function AnalyticsCharts({
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={c.borderSoft} />
                 <XAxis dataKey="short" tick={axisStyle} axisLine={false} tickLine={false} interval={2} />
-                <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={44} />
-                <Tooltip content={<ChartTooltip c={c} suffix=" ziyaretçi" />} cursor={{ stroke: c.border }} />
+                <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={44} allowDecimals={false} />
+                <Tooltip content={<ChartTooltip c={c} suffix={trafficSuffix} />} cursor={{ stroke: c.border }} />
                 <Area type="monotone" dataKey="visitors" stroke="#7C3AED" strokeWidth={2.5}
                   fill="url(#visGrad)" activeDot={{ r: 5, fill: "#7C3AED", stroke: c.cardBg, strokeWidth: 2 }} />
               </AreaChart>

@@ -13,6 +13,8 @@ import {
   usePanelTheme, PANEL_DISPLAY_FONT, PANEL_BODY_FONT, type PanelPalette,
 } from "./_lib/theme";
 
+import type { RealAnalytics } from "./_components/AnalyticsCharts";
+
 // recharts client-only — SSR ölçüm sorunlarını önlemek için dinamik import
 const AnalyticsCharts = dynamic(() => import("./_components/AnalyticsCharts"), {
   ssr: false,
@@ -89,6 +91,7 @@ export default function DashboardPage() {
   const [orders, setOrders]   = useState<OrderWithItems[]>([]);
   const [loading, setLoading] = useState(true);
   const [today, setToday]     = useState("");
+  const [analytics, setAnalytics] = useState<RealAnalytics | null>(null);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -102,10 +105,23 @@ export default function DashboardPage() {
     setLoading(false);
   }, []);
 
+  // Gerçek trafik analitiği — /api/analytics; başarısızsa null (grafik simülasyona düşer)
+  const fetchAnalytics = useCallback(async () => {
+    try {
+      const res = await fetch("/api/analytics", { cache: "no-store" });
+      if (!res.ok) { setAnalytics(null); return; }
+      setAnalytics((await res.json()) as RealAnalytics);
+    } catch { setAnalytics(null); }
+  }, []);
+
   useEffect(() => {
     setToday(new Date().toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }));
     fetchOrders();
-  }, [fetchOrders]);
+    fetchAnalytics();
+    // Canlı trafik için 30sn'de bir analitiği tazele
+    const id = setInterval(fetchAnalytics, 30_000);
+    return () => clearInterval(id);
+  }, [fetchOrders, fetchAnalytics]);
 
   // ── Gerçek istatistikler ──
   const active = orders.filter((o) => o.status !== "cancelled");
@@ -171,7 +187,7 @@ export default function DashboardPage() {
             <div className="h-80 rounded-2xl animate-pulse" style={{ background: c.hover }} />
           </div>
         ) : (
-          <AnalyticsCharts orders={orders} c={c} />
+          <AnalyticsCharts orders={orders} c={c} analytics={analytics} />
         )}
       </motion.div>
 

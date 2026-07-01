@@ -177,6 +177,20 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
     return () => window.removeEventListener("message", handle);
   }, [previewMode]);
 
+  // ── Anonim ziyaret takibi — yalnızca gerçek vitrin yüklemelerinde ──
+  // previewMode (panel önizleme iframe'i) sayılmaz. Oturum başına bir kez.
+  useEffect(() => {
+    if (previewMode || !store.id) return;
+    const flag = `optiefy_tracked_${store.id}`;
+    try { if (sessionStorage.getItem(flag)) return; sessionStorage.setItem(flag, "1"); } catch { /* ignore */ }
+    fetch("/api/track", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ storeId: store.id }),
+      keepalive: true,
+    }).catch(() => { /* takip hatası sessiz */ });
+  }, [previewMode, store.id]);
+
   const t      = THEMES[themeId];
   const layout = getLayout(themeId);
 
