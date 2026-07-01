@@ -5,9 +5,11 @@ import type { Metadata } from "next";
 import type { Store } from "@/types/store";
 import CollectionView from "../CollectionView";
 
+// Service role varsa RLS'yi atlar — ürün ilişkisi (products) anon policy'lerine
+// takılmadan her zaman eksiksiz gelir. Sadece aktif mağazanın public verisi okunur.
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)!
 );
 
 interface Props {

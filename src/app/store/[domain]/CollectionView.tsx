@@ -38,10 +38,31 @@ function CollectionInner({ store }: { store: Store }) {
 
   const brand = store.store_name;
 
-  // Sadece aktif ürünler — panel Ürün Kataloğu ile birebir senkron
-  const products: Product[] = (store.products ?? []).filter(
-    (p) => !p.status || p.status === "active"
+  // ── Katalog derleme ─────────────────────────────────────────────────────────
+  // 1) Mağazanın kuruluş (amiral gemisi) ürünü stores satırında yaşar — ana
+  //    sayfadaki hero ürün burada da mutlaka listelenir.
+  // 2) products tablosundan gelenler için filtre kapsayıcıdır: yalnızca açıkça
+  //    gizlenmiş durumlar elenir; status'u boş/bilinmeyen (test) ürünler görünür.
+  const HIDDEN_STATUSES = ["inactive", "archived", "hidden", "deleted", "draft"];
+
+  const tableProducts: Product[] = (store.products ?? []).filter(
+    (p) => !p.status || !HIDDEN_STATUSES.includes(p.status)
   );
+
+  const flagship: Product = {
+    id:            store.id, // StoreView'in sepet kimliğiyle birebir aynı
+    created_at:    store.created_at,
+    store_id:      store.id,
+    user_id:       store.user_id,
+    name:          store.seo_title ?? store.store_name,
+    size_variants: null,
+    price:         store.product_price ?? 0,
+    currency:      store.currency,
+    image_url:     store.image_urls?.[0] ?? null,
+    status:        "active",
+  };
+
+  const products: Product[] = [flagship, ...tableProducts];
 
   const fmtPrice = (price: number) =>
     store.currency === "USD"

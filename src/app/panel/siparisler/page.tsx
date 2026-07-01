@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ShoppingBag, X, Truck, CheckCircle2, XCircle, Clock, AlertCircle,
   RefreshCw, Search, Inbox, User, Mail, Phone, MapPin, Hash, Save,
-  ChevronRight, Package, Loader2,
+  ChevronRight, Package,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { updateOrderStatus } from "@/app/actions/orders";
@@ -73,30 +73,31 @@ function StatusBadge({ status }: { status: OrderStatus }) {
 // ─── OrderDetailDrawer ───────────────────────────────────────────────────────────
 
 function OrderDetailDrawer({
-  order, c, onClose, onSaved,
+  order, c, onClose, onSave,
 }: {
   order: OrderWithItems;
   c: PanelPalette;
   onClose: () => void;
-  onSaved: (id: string, status: OrderStatus, tracking: string | null) => void;
+  onSave: (order: OrderWithItems, status: OrderStatus, tracking: string | null) => Promise<{ success: boolean; error?: string }>;
 }) {
   const [status, setStatus]     = useState<OrderStatus>(order.status);
   const [tracking, setTracking] = useState(order.tracking_number ?? "");
-  const [saving, setSaving]     = useState(false);
   const [msg, setMsg]           = useState<{ ok: boolean; text: string } | null>(null);
 
   const items: OrderItem[] = (order.order_items ?? []) as OrderItem[];
 
-  const handleSave = async () => {
-    setSaving(true); setMsg(null);
-    const res = await updateOrderStatus(order.id, status, tracking);
-    setSaving(false);
-    if (res.success) {
-      setMsg({ ok: true, text: "Değişiklikler kaydedildi" });
-      onSaved(order.id, status, tracking.trim() || null);
-    } else {
-      setMsg({ ok: false, text: res.error ?? "Kayıt başarısız" });
-    }
+  // Optimistic kayıt — spinner/bekleme yok: UI anında güncellenir,
+  // PATCH arka planda koşar; hata dönerse form + liste eski haline döner.
+  const handleSave = () => {
+    const prev = { status: order.status, tracking: order.tracking_number ?? "" };
+    setMsg({ ok: true, text: "Değişiklikler kaydedildi" }); // 0 ms geri bildirim
+    onSave(order, status, tracking.trim() || null).then((res) => {
+      if (!res.success) {
+        setStatus(prev.status);
+        setTracking(prev.tracking);
+        setMsg({ ok: false, text: `${res.error ?? "Kayıt başarısız"} — değişiklik geri alındı` });
+      }
+    });
   };
 
   const inputStyle: React.CSSProperties = {
@@ -281,14 +282,13 @@ function OrderDetailDrawer({
           )}
           <motion.button
             onClick={handleSave}
-            disabled={saving}
-            whileHover={{ opacity: saving ? 1 : 0.88 }}
-            whileTap={{ scale: saving ? 1 : 0.98 }}
+            whileHover={{ opacity: 0.88 }}
+            whileTap={{ scale: 0.98 }}
             className="w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
             style={{ background: c.ctaBg, color: c.ctaText, fontFamily: PANEL_BODY_FONT }}
           >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {saving ? "Kaydediliyor…" : "Değişiklikleri Kaydet"}
+            <Save className="w-4 h-4" />
+            Değişiklikleri Kaydet
           </motion.button>
         </div>
       </motion.aside>
@@ -331,12 +331,35 @@ export default function SiparislerPage() {
   const openDrawer = (o: OrderWithItems) => setDrawer(o);
   const closeDrawer = () => setDrawer(null);
 
-  const handleSaved = (id: string, status: OrderStatus, tracking: string | null) => {
+  // ── Optimistic durum güncelleme ────────────────────────────────────────────
+  // UI, butona/select'e dokunulduğu an (0 ms) yeni duruma geçer. Supabase PATCH
+  // arka planda koşar; hata dönerse state otomatik olarak eski haline döner.
+
+  const applyOrderPatch = useCallback((id: string, status: OrderStatus, tracking: string | null) => {
     setOrders((prev) =>
       prev.map((o) => o.id === id ? { ...o, status, tracking_number: tracking } : o)
     );
     setDrawer((prev) => prev?.id === id ? { ...prev, status, tracking_number: tracking } : prev);
-  };
+  }, []);
+
+  const changeStatusOptimistic = useCallback(
+    (order: OrderWithItems, status: OrderStatus, tracking: string | null): Promise<{ success: boolean; error?: string }> => {
+      const snapshot = { status: order.status, tracking: order.tracking_number ?? null };
+
+      applyOrderPatch(order.id, status, tracking); // anında — beklemeden
+
+      return updateOrderStatus(order.id, status, tracking ?? "")
+        .then((res) => {
+          if (!res.success) applyOrderPatch(order.id, snapshot.status, snapshot.tracking); // rollback
+          return res;
+        })
+        .catch(() => {
+          applyOrderPatch(order.id, snapshot.status, snapshot.tracking); // rollback
+          return { success: false, error: "Bağlantı hatası" };
+        });
+    },
+    [applyOrderPatch],
+  );
 
   // Filtre
   const filtered = orders.filter((o) => {
@@ -538,10 +561,22 @@ export default function SiparislerPage() {
                         )}
                       </td>
 
-                      {/* Durum */}
-                      <td className="px-5 py-3.5">
+                      {/* Durum — rozete gömülü görünmez select: listeden 0 ms'de durum değişir */}
+                      <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-col gap-1">
-                          <StatusBadge status={o.status} />
+                          <div className="relative w-fit" title="Durumu değiştir">
+                            <StatusBadge status={o.status} />
+                            <select
+                              value={o.status}
+                              onChange={(e) => changeStatusOptimistic(o, e.target.value as OrderStatus, o.tracking_number ?? null)}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                              aria-label="Sipariş durumunu değiştir"
+                            >
+                              {Object.entries(STATUS_META).map(([key, val]) => (
+                                <option key={key} value={key}>{val.label}</option>
+                              ))}
+                            </select>
+                          </div>
                           {o.tracking_number && (
                             <p className="text-[10px] flex items-center gap-1" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
                               <Hash className="w-2.5 h-2.5" /> {o.tracking_number}
@@ -593,7 +628,7 @@ export default function SiparislerPage() {
             order={drawer}
             c={c}
             onClose={closeDrawer}
-            onSaved={handleSaved}
+            onSave={changeStatusOptimistic}
           />
         )}
       </AnimatePresence>

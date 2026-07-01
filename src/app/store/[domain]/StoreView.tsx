@@ -1251,7 +1251,7 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
               </p>
             </div>
             <nav className="flex flex-wrap gap-x-9 gap-y-3">
-              {[{ label: "Tüm Ürünler", href: storeHref("/urunler") }, ...LEGAL_LINKS].map(({ label, href }) => (
+              {LEGAL_LINKS.map(({ label, href }) => (
                 <a key={label} href={href} className="text-sm text-white/40 hover:text-white/80 transition-colors">{label}</a>
               ))}
             </nav>
