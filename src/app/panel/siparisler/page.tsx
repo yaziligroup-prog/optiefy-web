@@ -486,13 +486,13 @@ export default function SiparislerPage() {
                   const firstItem = items[0]?.product_name ?? "—";
                   const extra = items.length - 1;
                   return (
-                    <motion.tr
+                    <tr
                       key={o.id}
-                      initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.02 * i }}
                       onClick={() => openDrawer(o)}
-                      className="cursor-pointer"
+                      className="cursor-pointer transition-colors"
                       style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${c.borderSoft}` : "none" }}
-                      whileHover={{ backgroundColor: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.015)" }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.015)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
                     >
                       {/* Müşteri */}
                       <td className="px-5 py-3.5">
@@ -552,7 +552,7 @@ export default function SiparislerPage() {
                       <td className="px-5 py-3.5">
                         <ChevronRight className="w-4 h-4" style={{ color: c.textSubtle }} />
                       </td>
-                    </motion.tr>
+                    </tr>
                   );
                 })}
               </tbody>

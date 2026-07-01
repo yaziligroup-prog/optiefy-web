@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
@@ -419,6 +419,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   const router   = useRouter();
   const { c, isDark, toggle } = usePanelTheme();
   const { stores, refreshStores } = useActiveStore();
+  const [isNavPending, startNavTransition] = useTransition();
   const [mobileOpen,    setMobileOpen]    = useState(false);
   const [profileOpen,   setProfileOpen]   = useState(false);
   const [notifOpen,     setNotifOpen]     = useState(false);
@@ -487,9 +488,15 @@ function Shell({ children }: { children: React.ReactNode }) {
           const active = pathname === item.href;
           const Icon = item.icon;
           return (
-            <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}
+            <Link key={item.href} href={item.href} prefetch
+              onClick={(e) => {
+                setMobileOpen(false);
+                if (active) return;
+                e.preventDefault();
+                startNavTransition(() => router.push(item.href));
+              }}
               className="relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium"
-              style={{ color: active ? c.navActiveTxt : c.textMuted, fontFamily: PANEL_BODY_FONT }}>
+              style={{ color: active ? c.navActiveTxt : c.textMuted, fontFamily: PANEL_BODY_FONT, opacity: isNavPending ? 0.7 : 1, transition: "opacity 0.15s ease" }}>
               {active && (
                 <motion.span layoutId="nav-pill" className="absolute inset-0 rounded-xl"
                   style={{ background: c.navActive }} transition={spring} />
@@ -518,6 +525,21 @@ function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div style={{ ...tr, background: c.appBg, minHeight: "100vh", fontFamily: PANEL_BODY_FONT, overflowX: "hidden", maxWidth: "100vw" }}>
+
+      {/* Sayfa geçişi ince yükleme çizgisi — tıklandığı an tepki verir */}
+      <AnimatePresence>
+        {isNavPending && (
+          <motion.div
+            key="nav-progress"
+            initial={{ scaleX: 0, opacity: 1 }}
+            animate={{ scaleX: 0.8, opacity: 1 }}
+            exit={{ scaleX: 1, opacity: 0, transition: { duration: 0.2 } }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+            className="fixed top-0 left-0 right-0 z-[60] h-[2.5px] origin-left"
+            style={{ background: "linear-gradient(90deg,#7C3AED,#A855F7)" }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex fixed top-0 left-0 bottom-0 w-64 z-40 flex-col"
