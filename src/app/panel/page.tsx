@@ -1,16 +1,23 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import {
   CircleDollarSign, Clock, ShoppingBag, CheckCircle2,
-  ArrowUpRight, AlertTriangle, Sparkles, Zap, MoreHorizontal, RefreshCw, Inbox,
+  ArrowUpRight, AlertTriangle, Sparkles, Zap, MoreHorizontal, RefreshCw, Inbox, BarChart3,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import type { OrderWithItems, OrderStatus } from "@/types/order";
 import {
   usePanelTheme, PANEL_DISPLAY_FONT, PANEL_BODY_FONT, type PanelPalette,
 } from "./_lib/theme";
+
+// recharts client-only — SSR ölçüm sorunlarını önlemek için dinamik import
+const AnalyticsCharts = dynamic(() => import("./_components/AnalyticsCharts"), {
+  ssr: false,
+  loading: () => null,
+});
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -146,6 +153,27 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {STATS.map((s, i) => <StatCard key={s.label} {...s} index={i} c={c} />)}
       </div>
+
+      {/* ── Analitik & Grafikler ── */}
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.24 }}>
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg,#7C3AED,#2563EB)" }}>
+            <BarChart3 className="w-3.5 h-3.5 text-white" />
+          </div>
+          <h2 className="text-base font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Mağaza Analitiği</h2>
+          <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: c.hover, color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+            Gerçek zamanlı
+          </span>
+        </div>
+        {loading ? (
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+            <div className="xl:col-span-2 h-80 rounded-2xl animate-pulse" style={{ background: c.hover }} />
+            <div className="h-80 rounded-2xl animate-pulse" style={{ background: c.hover }} />
+          </div>
+        ) : (
+          <AnalyticsCharts orders={orders} c={c} />
+        )}
+      </motion.div>
 
       {/* Orders + AI */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
