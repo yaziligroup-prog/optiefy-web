@@ -438,10 +438,10 @@ const SUGGESTIONS = [
 // ─── StatCard ───────────────────────────────────────────────────────────────────
 
 function StatCard({
-  label, value, sub, icon: Icon, color, index, c,
+  label, value, sub, icon: Icon, color, index, c, loading,
 }: {
   label: string; value: string; sub: string;
-  icon: typeof CircleDollarSign; color: string; index: number; c: PanelPalette;
+  icon: typeof CircleDollarSign; color: string; index: number; c: PanelPalette; loading?: boolean;
 }) {
   return (
     <motion.div
@@ -454,8 +454,17 @@ function StatCard({
         <Icon className="w-[18px] h-[18px]" style={{ color }} />
       </div>
       <p className="text-xs font-medium mb-1.5" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>{label}</p>
-      <p className="text-2xl font-bold tracking-tight mb-1" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>{value}</p>
-      <p className="text-[11px]" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>{sub}</p>
+      {loading ? (
+        <>
+          <div className="h-7 w-20 rounded-md animate-pulse mb-1.5" style={{ background: c.hover }} />
+          <div className="h-3 w-28 rounded-md animate-pulse" style={{ background: c.hover }} />
+        </>
+      ) : (
+        <>
+          <p className="text-2xl font-bold tracking-tight mb-1" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>{value}</p>
+          <p className="text-[11px]" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>{sub}</p>
+        </>
+      )}
     </motion.div>
   );
 }
@@ -464,7 +473,7 @@ function StatCard({
 
 export default function DashboardPage() {
   const { c, isDark } = usePanelTheme();
-  const { activeStore, activeStoreId, refreshStores } = useActiveStore();
+  const { activeStore, activeStoreId, refreshStores, loading: storeLoading } = useActiveStore();
   const [publishing, setPublishing] = useState(false);
 
   const handlePublish = async () => {
@@ -512,8 +521,13 @@ export default function DashboardPage() {
     }
   }, [period, customFrom, customTo]);
 
-  const fetchOrders = useCallback(async (sid: string | null) => {
-    if (!sid) { setOrders([]); setLoading(false); return; }
+  const fetchOrders = useCallback(async (sid: string | null, storeStillLoading: boolean) => {
+    if (!sid) {
+      // Mağaza context'i henüz çözümlenmediyse "yükleniyor" durumunda kal —
+      // aksi halde gerçek veri gelmeden önce sahte sıfır istatistikler görünürdü.
+      if (!storeStillLoading) { setOrders([]); setLoading(false); }
+      return;
+    }
     setLoading(true);
     const supabase = createClient();
     let q = supabase
@@ -528,8 +542,11 @@ export default function DashboardPage() {
   }, []);
 
   // İlk yüklemede skeleton, sonraki güncellemelerde stale-while-revalidate
-  const fetchAnalytics = useCallback(async (from: string, to: string, sid: string | null) => {
-    if (!sid) { setAnalytics(null); setALoading(false); return; }
+  const fetchAnalytics = useCallback(async (from: string, to: string, sid: string | null, storeStillLoading: boolean) => {
+    if (!sid) {
+      if (!storeStillLoading) { setAnalytics(null); setALoading(false); }
+      return;
+    }
     if (!analyticsReady.current) {
       setALoading(true);
     } else {
@@ -555,18 +572,18 @@ export default function DashboardPage() {
 
   // Mağaza değişince veya tarih aralığı değişince siparişleri yeniden çek
   useEffect(() => {
-    fetchOrders(activeStoreId);
+    fetchOrders(activeStoreId, storeLoading);
     // analyticsReady sıfırla — yeni mağazada skeleton göster
     analyticsReady.current = false;
     setALoading(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStoreId]);
+  }, [activeStoreId, storeLoading]);
 
   // Tarih aralığı veya mağaza değişince analitik çek
   useEffect(() => {
-    fetchAnalytics(appliedRange.from, appliedRange.to, activeStoreId);
+    fetchAnalytics(appliedRange.from, appliedRange.to, activeStoreId, storeLoading);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appliedRange, activeStoreId]);
+  }, [appliedRange, activeStoreId, storeLoading]);
 
   // ── İstatistikler ──
   const active         = orders.filter((o) => o.status !== "cancelled");
@@ -616,7 +633,7 @@ export default function DashboardPage() {
             </h1>
             <p className="text-sm mt-1.5" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Gerçek zamanlı sipariş ve trafik verileri bu mağazaya ait.</p>
           </div>
-          <button onClick={() => fetchOrders(activeStoreId)} title="Yenile"
+          <button onClick={() => fetchOrders(activeStoreId, storeLoading)} title="Yenile"
             className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
             style={{ background: c.hover, border: `1px solid ${c.border}` }}>
             <RefreshCw className="w-4 h-4" style={{ color: c.textMuted }} />
@@ -669,7 +686,7 @@ export default function DashboardPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {STATS.map((s, i) => <StatCard key={s.label} {...s} index={i} c={c} />)}
+        {STATS.map((s, i) => <StatCard key={s.label} {...s} index={i} c={c} loading={loading} />)}
       </div>
 
       {/* ── Analitik & Grafikler ── */}
