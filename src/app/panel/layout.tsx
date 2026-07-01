@@ -31,14 +31,23 @@ const DASHBOARD_ROUTES: string[] = NAV.map((n) => n.href);
 
 const spring = { type: "spring" as const, stiffness: 420, damping: 36 };
 
+// ─── Bildirim verileri ────────────────────────────────────────────────────────
+
+const MOCK_NOTIFS = [
+  { id: "1", title: "Yeni sipariş alındı",   body: "vivinth.com mağazanızdan 1 sipariş geldi.",  time: "2 dk önce",  read: false },
+  { id: "2", title: "Ürün yayına alındı",    body: "Metal Kase ürününüz aktif olarak yayında.",  time: "1 sa önce",  read: true  },
+  { id: "3", title: "Analitik raporu hazır", body: "Bu haftaki trafik özeti panelde sizi bekliyor.", time: "3 sa önce", read: true },
+];
+
 // ─── Shell (chrome) ─────────────────────────────────────────────────────────────
 
 function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router   = useRouter();
   const { c, isDark, toggle } = usePanelTheme();
-  const [mobileOpen, setMobileOpen]   = useState(false);
+  const [mobileOpen,  setMobileOpen]  = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [notifOpen,   setNotifOpen]   = useState(false);
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
@@ -181,12 +190,65 @@ function Shell({ children }: { children: React.ReactNode }) {
               </AnimatePresence>
             </motion.button>
 
-            {/* Bell */}
-            <button className="w-9 h-9 rounded-lg flex items-center justify-center relative"
-              style={{ ...tr, background: c.hover, border: `1px solid ${c.border}` }}>
-              <Bell className="w-4 h-4" style={{ color: c.textMuted }} />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full" style={{ background: "#EF4444", boxShadow: `0 0 0 2px ${c.topbarBg}` }} />
-            </button>
+            {/* Bell — bildirim popoversı */}
+            <div className="relative">
+              <button onClick={() => { setNotifOpen((o) => !o); setProfileOpen(false); }}
+                className="w-9 h-9 rounded-lg flex items-center justify-center relative"
+                style={{ ...tr, background: notifOpen ? c.accentSoft : c.hover, border: `1px solid ${notifOpen ? c.border : c.border}` }}>
+                <Bell className="w-4 h-4" style={{ color: c.textMuted }} />
+                {MOCK_NOTIFS.some((n) => !n.read) && (
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full" style={{ background: "#EF4444", boxShadow: `0 0 0 2px ${c.topbarBg}` }} />
+                )}
+              </button>
+
+              <AnimatePresence>
+                {notifOpen && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setNotifOpen(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                      transition={{ duration: 0.16 }}
+                      className="absolute right-0 mt-2 w-80 rounded-2xl overflow-hidden z-40"
+                      style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadowMd }}
+                    >
+                      <div className="px-4 py-3.5 flex items-center justify-between" style={{ borderBottom: `1px solid ${c.borderSoft}` }}>
+                        <p className="text-sm font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Bildirimler</p>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full font-bold"
+                          style={{ background: "#7C3AED20", color: "#7C3AED" }}>
+                          {MOCK_NOTIFS.filter((n) => !n.read).length} yeni
+                        </span>
+                      </div>
+                      <div>
+                        {MOCK_NOTIFS.map((n, i) => (
+                          <div key={n.id} className="px-4 py-3.5 flex items-start gap-3"
+                            style={{
+                              borderBottom: i < MOCK_NOTIFS.length - 1 ? `1px solid ${c.borderSoft}` : "none",
+                              background: n.read ? "transparent" : (isDark ? "rgba(124,58,237,0.06)" : "#FAF5FF"),
+                            }}>
+                            <div className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5"
+                              style={{ background: n.read ? c.borderSoft : "#7C3AED" }} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold leading-tight" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>{n.title}</p>
+                              <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>{n.body}</p>
+                              <p className="text-[10px] mt-1" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>{n.time}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="px-4 py-2.5 text-center" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
+                        <button onClick={() => setNotifOpen(false)}
+                          className="text-xs font-semibold hover:opacity-70"
+                          style={{ color: "#7C3AED", fontFamily: PANEL_BODY_FONT }}>
+                          Tümünü okundu işaretle
+                        </button>
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
 
             {/* Profile dropdown */}
             <div className="relative">

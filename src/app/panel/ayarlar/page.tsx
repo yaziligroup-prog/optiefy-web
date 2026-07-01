@@ -5,8 +5,9 @@ import { motion } from "framer-motion";
 import {
   User, Lock, Store, CheckCircle, AlertCircle, Loader2, Eye, EyeOff,
   ExternalLink, RefreshCw, Trash2, Shield, Truck, Globe, Copy, Check,
-  ChevronRight as ChevronRightIcon,
+  ChevronRight as ChevronRightIcon, Palette,
 } from "lucide-react";
+import { THEMES, type ThemeId } from "@/types/theme";
 import { createClient } from "@/utils/supabase/client";
 import type { User as SupaUser } from "@supabase/supabase-js";
 import {
@@ -462,6 +463,120 @@ function ShippingSection({ c }: { c: PanelPalette }) {
   );
 }
 
+// ─── ThemeSection ────────────────────────────────────────────────────────────────
+
+function ThemeSection({ c }: { c: PanelPalette }) {
+  const [stores,    setStores]    = useState<StoreType[]>([]);
+  const [storeId,   setStoreId]   = useState("");
+  const [theme,     setTheme]     = useState<ThemeId>("artisan");
+  const [saving,    setSaving]    = useState(false);
+  const [saved,     setSaved]     = useState(false);
+  const tr: React.CSSProperties = { transition: "background-color 0.3s, color 0.3s, border-color 0.3s" };
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.from("stores").select("id,store_name,theme").order("created_at", { ascending: false })
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const list = data as StoreType[];
+          setStores(list);
+          setStoreId(list[0].id);
+          setTheme((list[0].theme as ThemeId) ?? "artisan");
+        }
+      });
+  }, []);
+
+  useEffect(() => {
+    const s = stores.find((s) => s.id === storeId);
+    if (s) setTheme((s.theme as ThemeId) ?? "artisan");
+  }, [storeId, stores]);
+
+  const handleSave = async () => {
+    if (!storeId) return;
+    setSaving(true);
+    const res = await fetch("/api/stores", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: storeId, theme }),
+    });
+    setSaving(false);
+    if (res.ok) {
+      setStores((prev) => prev.map((s) => s.id === storeId ? { ...s, theme } : s));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    }
+  };
+
+  return (
+    <section className="rounded-2xl p-6 space-y-5" style={sectionCard(c)}>
+      <div className="flex items-center gap-2.5">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "#EC489915", border: "1px solid #EC489925" }}>
+          <Palette className="w-4 h-4" style={{ color: "#EC4899" }} />
+        </div>
+        <div>
+          <h2 className="text-base font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Mağaza Tasarımı</h2>
+          <p className="text-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>Mağazanızın görsel temasını tek tıkla değiştirin</p>
+        </div>
+      </div>
+
+      {stores.length === 0 ? (
+        <p className="text-sm" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Henüz mağaza yok.</p>
+      ) : (
+        <>
+          {stores.length > 1 && (
+            <div>
+              <label className="text-xs font-medium block mb-1.5" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Mağaza</label>
+              <select value={storeId} onChange={(e) => setStoreId(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none max-w-sm"
+                style={{ ...tr, background: c.inputBg, border: `1px solid ${c.border}`, color: c.text, fontFamily: PANEL_BODY_FONT }}>
+                {stores.map((s) => <option key={s.id} value={s.id}>{s.store_name}</option>)}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-medium block mb-3" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>Tema Seçin</label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              {(Object.keys(THEMES) as ThemeId[]).map((tid) => {
+                const th = THEMES[tid];
+                const sel = theme === tid;
+                return (
+                  <button key={tid} onClick={() => setTheme(tid)}
+                    className="flex flex-col items-start p-3.5 rounded-xl text-left transition-all"
+                    style={{
+                      background: sel ? `${th.accentColor}14` : c.cardBgSoft ?? c.hover,
+                      border: sel ? `2px solid ${th.accentColor}` : `1px solid ${c.borderSoft}`,
+                    }}>
+                    {/* Tema renk paleti önizleme */}
+                    <div className="flex gap-1 mb-2.5">
+                      {[th.accentColor, th.primaryBtn.startsWith("linear") ? th.accentColor : th.primaryBtn, th.titleColor].map((color, i) => (
+                        <span key={i} className="w-4 h-4 rounded-full flex-shrink-0" style={{ background: color }} />
+                      ))}
+                    </div>
+                    <p className="text-xs font-bold leading-tight" style={{ color: sel ? th.accentColor : c.text, fontFamily: PANEL_BODY_FONT }}>
+                      {th.name}
+                    </p>
+                    <p className="text-[10px] mt-0.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+                      {tid === "luxury" ? "Minimalist · Premium" : tid === "artisan" ? "Sıcak · El işi" : tid === "modern" ? "Modern · Temiz" : tid === "dynamic" ? "Enerjik · Genç" : "Kurumsal · Profesyonel"}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <button onClick={handleSave} disabled={saving}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
+            style={{ background: saved ? "#05966920" : c.ctaBg, color: saved ? "#059669" : c.ctaText, fontFamily: PANEL_BODY_FONT, border: saved ? "1px solid #05966940" : "none", transition: "all 0.3s" }}>
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCircle className="w-4 h-4" /> : <Palette className="w-4 h-4" />}
+            {saving ? "Kaydediliyor…" : saved ? "Tema güncellendi ✓" : "Temayı Kaydet"}
+          </button>
+        </>
+      )}
+    </section>
+  );
+}
+
 // ─── DangerSection ────────────────────────────────────────────────────────────────
 
 // ─── DomainSection ────────────────────────────────────────────────────────────────
@@ -835,15 +950,18 @@ export default function AyarlarPage() {
             <PasswordSection c={c} />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.20 }}>
-            <StoresSection c={c} />
+            <ThemeSection c={c} />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.26 }}>
-            <ShippingSection c={c} />
+            <StoresSection c={c} />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.32 }}>
-            <DomainSection c={c} />
+            <ShippingSection c={c} />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38 }}>
+            <DomainSection c={c} />
+          </motion.div>
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.44 }}>
             <DangerSection c={c} />
           </motion.div>
         </>

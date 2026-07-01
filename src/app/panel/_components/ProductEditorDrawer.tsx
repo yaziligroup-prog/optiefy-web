@@ -6,7 +6,6 @@ import {
   X, Save, Loader2, Plus, Trash2, Sparkles, Package, Globe,
   Tag, FileText, ListChecks, Power, ExternalLink,
 } from "lucide-react";
-import { createClient } from "@/utils/supabase/client";
 import type { Store } from "@/types/store";
 import { THEMES, type ThemeId } from "@/types/theme";
 import { PANEL_BODY_FONT, type PanelPalette } from "../_lib/theme";
@@ -27,6 +26,7 @@ type Draft = {
   description: string;
   features:    string[];
   status:      string;
+  theme:       ThemeId;
 };
 
 function storeToDraft(s: Store): Draft {
@@ -37,6 +37,7 @@ function storeToDraft(s: Store): Draft {
     description: s.description ?? "",
     features:    s.features ? [...s.features] : [],
     status:      s.status ?? "pending",
+    theme:       (s.theme as ThemeId) ?? "artisan",
   };
 }
 
@@ -71,7 +72,6 @@ export default function ProductEditorDrawer({ store, c, isDark, open, onClose, o
 
   const isLive = draft.status === "active";
   const images = store.image_urls?.length ? store.image_urls : (store.product_image_base64 ? [store.product_image_base64] : []);
-  const theme  = (store.theme ?? "modern") as ThemeId;
   const liveHref = store.custom_domain ? `https://${store.custom_domain}` : null;
 
   const handleSave = async () => {
@@ -82,18 +82,23 @@ export default function ProductEditorDrawer({ store, c, isDark, open, onClose, o
     setSaving(true); setErr("");
     const cleanFeatures = draft.features.map((f) => f.trim()).filter(Boolean);
     const payload = {
+      id:            store.id,
       seo_title:     draft.seo_title.trim(),
       product_price: priceNum,
       currency:      draft.currency,
       description:   draft.description.trim() || null,
       features:      cleanFeatures.length ? cleanFeatures : null,
       status:        draft.status,
+      theme:         draft.theme,
     };
 
-    const supabase = createClient();
-    const { error } = await supabase.from("stores").update(payload).eq("id", store.id);
+    const res = await fetch("/api/stores", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
     setSaving(false);
-    if (error) { setErr("Kaydedilirken bir hata oluştu. Tekrar deneyin."); return; }
+    if (!res.ok) { setErr("Kaydedilirken bir hata oluştu. Tekrar deneyin."); return; }
 
     onSaved(store.id, payload);
     setDirty(false);
@@ -242,27 +247,43 @@ export default function ProductEditorDrawer({ store, c, isDark, open, onClose, o
                 </div>
               </div>
 
-              {/* Meta: tema + domain */}
-              <div className="rounded-xl p-3.5 space-y-2.5" style={{ background: c.cardBgSoft, border: `1px solid ${c.borderSoft}` }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs flex items-center gap-1.5" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
-                    <span className="w-3 h-3 rounded-full" style={{ background: THEMES[theme].accentColor }} /> Vitrin Teması
-                  </span>
-                  <span className="text-xs font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>{THEMES[theme].name}</span>
+              {/* Mağaza Tasarımı — tek tıkla tema değiştir */}
+              <div>
+                <label style={{ ...labelStyle, marginBottom: 10 }}>Mağaza Tasarımı (Tema)</label>
+                <div className="flex flex-wrap gap-2">
+                  {(Object.keys(THEMES) as ThemeId[]).map((tid) => {
+                    const th = THEMES[tid];
+                    const sel = draft.theme === tid;
+                    return (
+                      <button key={tid} onClick={() => patch({ theme: tid })}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all"
+                        style={{
+                          background: sel ? `${th.accentColor}18` : c.hover,
+                          border: sel ? `2px solid ${th.accentColor}` : `1px solid ${c.border}`,
+                          color: sel ? th.accentColor : c.textMuted,
+                          fontFamily: PANEL_BODY_FONT,
+                        }}>
+                        <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: th.accentColor }} />
+                        {th.shortName}
+                      </button>
+                    );
+                  })}
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs flex items-center gap-1.5" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
-                    <Globe className="w-3.5 h-3.5" /> Adres
-                  </span>
-                  {liveHref ? (
-                    <a href={liveHref} target="_blank" rel="noopener noreferrer"
-                      className="text-xs font-semibold flex items-center gap-1 hover:underline" style={{ color: "#16A34A", fontFamily: PANEL_BODY_FONT }}>
-                      {store.custom_domain} <ExternalLink className="w-3 h-3" />
-                    </a>
-                  ) : (
-                    <span className="text-xs font-mono" style={{ color: c.textSubtle }}>otomatik</span>
-                  )}
-                </div>
+              </div>
+
+              {/* Domain bilgisi */}
+              <div className="rounded-xl p-3 flex items-center justify-between" style={{ background: c.cardBgSoft, border: `1px solid ${c.borderSoft}` }}>
+                <span className="text-xs flex items-center gap-1.5" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
+                  <Globe className="w-3.5 h-3.5" /> Adres
+                </span>
+                {liveHref ? (
+                  <a href={liveHref} target="_blank" rel="noopener noreferrer"
+                    className="text-xs font-semibold flex items-center gap-1 hover:underline" style={{ color: "#16A34A", fontFamily: PANEL_BODY_FONT }}>
+                    {store.custom_domain} <ExternalLink className="w-3 h-3" />
+                  </a>
+                ) : (
+                  <span className="text-xs font-mono" style={{ color: c.textSubtle }}>otomatik</span>
+                )}
               </div>
 
               {err && (
