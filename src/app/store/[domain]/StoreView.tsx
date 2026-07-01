@@ -210,8 +210,10 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
   // ─── Derive display values from real DB data ───────────────────────────────────
   const brand = store.store_name;
 
-  // Prefer the first AI-generated product name, fall back to seo_title / store_name
-  const aiProducts = store.products ?? [];
+  // Sadece aktif ürünler — status kolonu yoksa hepsini göster
+  const aiProducts = (store.products ?? []).filter(
+    (p) => !p.status || p.status === "active"
+  );
   const productName = aiProducts[0]?.name ?? store.seo_title ?? store.store_name;
 
   // Price: prefer stored product_price; fallback to AI products[0].price if available
@@ -1027,6 +1029,62 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
           ))}
         </div>
       </section>
+
+      {/* ════ DİĞER ÜRÜNLER — sadece 2+ ürün varsa göster ════ */}
+      {aiProducts.length > 1 && (
+        <section className="max-w-7xl mx-auto px-6 md:px-12 py-16">
+          <h2
+            className="text-2xl font-bold mb-8 text-center"
+            style={{ color: t.titleColor, fontFamily: t.fontFamily }}
+          >
+            Diğer Ürünler
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+            {aiProducts.slice(1).map((prod) => {
+              const prodImg = prod.image_url ?? null;
+              const prodPrice = prod.price ?? 0;
+              const priceDisplay = store.currency === "USD"
+                ? "$" + prodPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })
+                : prodPrice.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " ₺";
+              return (
+                <motion.div
+                  key={prod.id}
+                  whileHover={{ y: -4 }}
+                  transition={{ type: "spring", stiffness: 340, damping: 28 }}
+                  className="rounded-2xl overflow-hidden cursor-pointer"
+                  style={{ background: t.cardBg ?? t.bgColor, border: `1px solid ${t.borderColor}` }}
+                  onClick={() => {
+                    addItem({ id: prod.id, name: prod.name, price: prodPrice, image: prodImg });
+                    openDrawer();
+                    trackEvent("add_to_cart");
+                  }}
+                >
+                  <div className="aspect-square relative" style={{ background: t.galleryBg }}>
+                    {prodImg ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={prodImg} alt={prod.name}
+                        className="w-full h-full object-contain p-3" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Package style={{ width: 40, height: 40, color: t.accentColor, opacity: 0.3 }} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <p className="text-sm font-semibold leading-snug mb-1 line-clamp-2"
+                      style={{ color: t.titleColor, fontFamily: t.fontFamilySans }}>
+                      {prod.name}
+                    </p>
+                    <p className="text-sm font-bold" style={{ color: t.priceColor, fontFamily: t.fontFamily }}>
+                      {priceDisplay}
+                    </p>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* ════ FOOTER ════ */}
       <footer style={{ background: t.footerBg }}>

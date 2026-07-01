@@ -3,56 +3,48 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  X, Save, Loader2, Plus, Trash2, Sparkles, Package, Globe,
-  Tag, FileText, ListChecks, Power, ExternalLink,
+  X, Save, Loader2, Tag, FileText, Power, Image as ImageIcon,
 } from "lucide-react";
-import type { Store } from "@/types/store";
-import { THEMES, type ThemeId } from "@/types/theme";
+import type { Product } from "@/types/store";
 import { PANEL_BODY_FONT, type PanelPalette } from "../_lib/theme";
 
 interface Props {
-  store: Store | null;
+  product: Product | null;
   c: PanelPalette;
   isDark: boolean;
   open: boolean;
   onClose: () => void;
-  onSaved: (storeId: string, patch: Partial<Store>) => void;
+  onSaved: (productId: string, patch: Partial<Product>) => void;
 }
 
 type Draft = {
-  seo_title:   string;
+  name:        string;
   price:       string;
   currency:    "TRY" | "USD";
   description: string;
-  features:    string[];
-  status:      string;
-  theme:       ThemeId;
+  status:      "active" | "pending";
 };
 
-function storeToDraft(s: Store): Draft {
+function productToDraft(p: Product): Draft {
   return {
-    seo_title:   s.seo_title ?? s.store_name ?? "",
-    price:       String(s.product_price ?? ""),
-    currency:    (s.currency === "USD" ? "USD" : "TRY"),
-    description: s.description ?? "",
-    features:    s.features ? [...s.features] : [],
-    status:      s.status ?? "pending",
-    theme:       (s.theme as ThemeId) ?? "artisan",
+    name:        p.name ?? "",
+    price:       String(p.price ?? ""),
+    currency:    p.currency === "USD" ? "USD" : "TRY",
+    description: p.description ?? "",
+    status:      p.status === "active" ? "active" : "pending",
   };
 }
 
-export default function ProductEditorDrawer({ store, c, isDark, open, onClose, onSaved }: Props) {
-  const [draft, setDraft]     = useState<Draft | null>(null);
-  const [saving, setSaving]   = useState(false);
-  const [err, setErr]         = useState("");
-  const [dirty, setDirty]     = useState(false);
+export default function ProductEditorDrawer({ product, c, isDark, open, onClose, onSaved }: Props) {
+  const [draft,  setDraft]  = useState<Draft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [err,    setErr]    = useState("");
+  const [dirty,  setDirty]  = useState(false);
 
-  // Store değişince taslağı sıfırla
   useEffect(() => {
-    if (store) { setDraft(storeToDraft(store)); setDirty(false); setErr(""); }
-  }, [store]);
+    if (product) { setDraft(productToDraft(product)); setDirty(false); setErr(""); }
+  }, [product]);
 
-  // ESC ile kapat
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !saving) onClose(); };
@@ -60,60 +52,51 @@ export default function ProductEditorDrawer({ store, c, isDark, open, onClose, o
     return () => window.removeEventListener("keydown", onKey);
   }, [open, saving, onClose]);
 
-  if (!store || !draft) return null;
+  if (!product || !draft) return null;
 
-  const patch = (p: Partial<Draft>) => { setDraft((d) => (d ? { ...d, ...p } : d)); setDirty(true); setErr(""); };
-
-  const updateFeature = (i: number, val: string) => {
-    const next = [...draft.features]; next[i] = val; patch({ features: next });
-  };
-  const removeFeature = (i: number) => patch({ features: draft.features.filter((_, idx) => idx !== i) });
-  const addFeature    = () => patch({ features: [...draft.features, ""] });
+  const patch = (p: Partial<Draft>) => { setDraft((d) => d ? { ...d, ...p } : d); setDirty(true); setErr(""); };
 
   const isLive = draft.status === "active";
-  const images = store.image_urls?.length ? store.image_urls : (store.product_image_base64 ? [store.product_image_base64] : []);
-  const liveHref = store.custom_domain ? `https://${store.custom_domain}` : null;
 
   const handleSave = async () => {
     const priceNum = parseFloat(draft.price.replace(",", "."));
-    if (!draft.seo_title.trim()) { setErr("Ürün başlığı boş olamaz."); return; }
+    if (!draft.name.trim()) { setErr("Ürün adı boş olamaz."); return; }
     if (isNaN(priceNum) || priceNum <= 0) { setErr("Geçerli bir fiyat girin."); return; }
-
     setSaving(true); setErr("");
-    const cleanFeatures = draft.features.map((f) => f.trim()).filter(Boolean);
-    const payload = {
-      id:            store.id,
-      seo_title:     draft.seo_title.trim(),
-      product_price: priceNum,
-      currency:      draft.currency,
-      description:   draft.description.trim() || null,
-      features:      cleanFeatures.length ? cleanFeatures : null,
-      status:        draft.status,
-      theme:         draft.theme,
-    };
-
-    const res = await fetch("/api/stores", {
+    const res = await fetch("/api/products", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        id:          product.id,
+        name:        draft.name.trim(),
+        price:       priceNum,
+        currency:    draft.currency,
+        description: draft.description.trim() || null,
+        status:      draft.status,
+      }),
     });
     setSaving(false);
-    if (!res.ok) { setErr("Kaydedilirken bir hata oluştu. Tekrar deneyin."); return; }
-
-    onSaved(store.id, payload);
+    if (!res.ok) { setErr("Kaydedilirken hata oluştu."); return; }
+    onSaved(product.id, {
+      name:        draft.name.trim(),
+      price:       priceNum,
+      currency:    draft.currency,
+      description: draft.description.trim() || null,
+      status:      draft.status,
+    });
     setDirty(false);
     onClose();
   };
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%", padding: "11px 13px", borderRadius: 11, fontSize: 14,
-    background: c.inputBg, border: `1px solid ${c.border}`, color: c.text,
+  const inp: React.CSSProperties = {
+    width: "100%", padding: "10px 13px", borderRadius: 11, fontSize: 14,
+    background: c.inputBg ?? (isDark ? "#111" : "#F9F9F9"),
+    border: `1px solid ${c.border}`, color: c.text,
     outline: "none", fontFamily: PANEL_BODY_FONT,
   };
-  const labelStyle: React.CSSProperties = {
+  const lbl: React.CSSProperties = {
     fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em",
-    color: c.textSubtle, fontFamily: PANEL_BODY_FONT, marginBottom: 8, display: "flex",
-    alignItems: "center", gap: 6,
+    color: c.textSubtle, fontFamily: PANEL_BODY_FONT, marginBottom: 6, display: "block",
   };
 
   return (
@@ -121,84 +104,85 @@ export default function ProductEditorDrawer({ store, c, isDark, open, onClose, o
       {open && (
         <>
           {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={() => !saving && onClose()}
-            className="fixed inset-0 z-[90]"
-            style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
-          />
+            className="fixed inset-0 z-[80]"
+            style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }} />
 
-          {/* Drawer */}
-          <motion.aside
+          {/* Drawer — slides from right */}
+          <motion.div
             initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
-            transition={{ type: "spring", stiffness: 320, damping: 34 }}
-            className="fixed top-0 right-0 bottom-0 z-[91] w-full max-w-md flex flex-col"
-            style={{ background: c.appBg, borderLeft: `1px solid ${c.border}`, boxShadow: c.shadowMd }}
+            transition={{ type: "spring", stiffness: 340, damping: 36 }}
+            className="fixed right-0 top-0 bottom-0 z-[81] flex flex-col"
+            style={{
+              width: "min(520px, 100vw)",
+              background: c.appBg,
+              borderLeft: `1px solid ${c.border}`,
+              boxShadow: "-12px 0 48px rgba(0,0,0,0.22)",
+            }}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 h-16 flex-shrink-0"
+            <div className="flex items-center justify-between px-6 py-4 flex-shrink-0"
               style={{ borderBottom: `1px solid ${c.border}`, background: c.cardBg }}>
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                  style={{ background: "linear-gradient(135deg,#7C3AED,#EC4899)" }}>
-                  <Package className="w-4 h-4 text-white" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold truncate" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>Ürün Düzenle</p>
-                  <p className="text-[11px] truncate" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>{store.store_name}</p>
-                </div>
+              <div>
+                <p className="text-sm font-semibold" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
+                  Ürün Düzenle
+                </p>
+                <p className="text-[11px] mt-0.5 truncate max-w-[300px]"
+                  style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+                  {product.name}
+                </p>
               </div>
-              <button onClick={() => !saving && onClose()} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+              <button onClick={onClose} disabled={saving}
+                className="w-8 h-8 rounded-lg flex items-center justify-center"
                 style={{ background: c.hover, border: `1px solid ${c.border}` }}>
                 <X className="w-4 h-4" style={{ color: c.textMuted }} />
               </button>
             </div>
 
-            {/* Scrollable body */}
-            <div className="flex-1 overflow-y-auto px-5 py-6 space-y-6">
+            {/* Scroll area */}
+            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
 
-              {/* Görsel şeridi */}
-              <div>
-                <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                  {images.length > 0 ? images.map((img, i) => (
-                    <div key={i} className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0"
-                      style={{ background: isDark ? "#0F0F0F" : "#F4F4F2", border: `1px solid ${c.border}` }}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={img} alt={`${i + 1}`} className="w-full h-full object-contain p-1.5" />
-                    </div>
-                  )) : (
-                    <div className="w-20 h-20 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ background: c.hover, border: `1px solid ${c.border}` }}>
-                      <Package className="w-6 h-6" style={{ color: c.textSubtle }} />
-                    </div>
-                  )}
+              {/* Image preview (read-only) */}
+              {product.image_url && (
+                <div className="rounded-2xl overflow-hidden"
+                  style={{ background: isDark ? "#111" : "#F4F4F2", border: `1px solid ${c.border}`, height: 200 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={product.image_url} alt={product.name}
+                    className="w-full h-full object-contain p-4" />
                 </div>
-                <p className="text-[11px] mt-2" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-                  Görseller AI stüdyosunda üretildi · {images.length} görsel
-                </p>
+              )}
+              {!product.image_url && (
+                <div className="rounded-2xl flex items-center justify-center gap-2"
+                  style={{ background: isDark ? "#111" : "#F4F4F2", border: `1px dashed ${c.border}`, height: 100 }}>
+                  <ImageIcon className="w-5 h-5" style={{ color: c.textSubtle }} />
+                  <span className="text-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>Görsel yok</span>
+                </div>
+              )}
+
+              {/* Name */}
+              <div>
+                <label style={lbl}>
+                  <span className="flex items-center gap-1.5"><Tag className="w-3 h-3 inline" /> Ürün Adı *</span>
+                </label>
+                <input value={draft.name} onChange={(e) => patch({ name: e.target.value })}
+                  placeholder="Ör: El Yapımı Seramik Kase" style={inp} maxLength={120} />
               </div>
 
-              {/* Ürün başlığı (SEO title) */}
+              {/* Price */}
               <div>
-                <label style={labelStyle}><Tag className="w-3.5 h-3.5" /> Ürün Başlığı (SEO)</label>
-                <input value={draft.seo_title} onChange={(e) => patch({ seo_title: e.target.value })}
-                  placeholder="El Yapımı Desenli Metal Kase" style={inputStyle} maxLength={70} />
-                <p className="text-[11px] mt-1.5 text-right" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-                  {draft.seo_title.length}/70
-                </p>
-              </div>
-
-              {/* Fiyat + para birimi */}
-              <div>
-                <label style={labelStyle}><Sparkles className="w-3.5 h-3.5" /> Fiyat</label>
+                <label style={lbl}>Fiyat *</label>
                 <div className="flex gap-2">
-                  <div className="flex rounded-xl overflow-hidden flex-shrink-0" style={{ border: `1px solid ${c.border}` }}>
+                  <div className="flex rounded-xl overflow-hidden flex-shrink-0"
+                    style={{ border: `1px solid ${c.border}` }}>
                     {(["TRY", "USD"] as const).map((cur) => (
                       <button key={cur} onClick={() => patch({ currency: cur })}
-                        className="px-4 py-2.5 text-sm font-bold transition-colors"
+                        className="px-3.5 py-2.5 text-sm font-bold transition-colors"
                         style={{
-                          background: draft.currency === cur ? c.ctaBg : "transparent",
-                          color: draft.currency === cur ? c.ctaText : c.textMuted, fontFamily: PANEL_BODY_FONT,
+                          background: draft.currency === cur
+                            ? "linear-gradient(135deg,#7C3AED,#EC4899)" : "transparent",
+                          color: draft.currency === cur ? "#fff" : c.textMuted,
+                          fontFamily: PANEL_BODY_FONT,
                         }}>
                         {cur === "TRY" ? "₺" : "$"}
                       </button>
@@ -206,117 +190,62 @@ export default function ProductEditorDrawer({ store, c, isDark, open, onClose, o
                   </div>
                   <input value={draft.price} inputMode="decimal"
                     onChange={(e) => patch({ price: e.target.value })}
-                    placeholder="299,90" style={{ ...inputStyle, flex: 1 }} />
+                    placeholder={draft.currency === "TRY" ? "299,90" : "49.99"}
+                    style={{ ...inp, flex: 1 }} />
                 </div>
               </div>
 
-              {/* SEO açıklaması */}
+              {/* Description */}
               <div>
-                <label style={labelStyle}><FileText className="w-3.5 h-3.5" /> SEO Açıklaması</label>
-                <textarea value={draft.description} onChange={(e) => patch({ description: e.target.value })}
-                  placeholder="Ürünün değer önerisini anlatan, satışa dönük açıklama…"
-                  rows={4} style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6 }} maxLength={320} />
-                <p className="text-[11px] mt-1.5 text-right" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-                  {draft.description.length}/320
-                </p>
-              </div>
-
-              {/* Özellikler */}
-              <div>
-                <label style={labelStyle}><ListChecks className="w-3.5 h-3.5" /> Öne Çıkan Özellikler</label>
-                <div className="space-y-2">
-                  {draft.features.map((f, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: c.accentText }} />
-                      <input value={f} onChange={(e) => updateFeature(i, e.target.value)}
-                        placeholder={`Özellik ${i + 1}`} style={{ ...inputStyle, padding: "9px 12px" }} />
-                      <button onClick={() => removeFeature(i)}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                        style={{ background: c.hover, border: `1px solid ${c.border}` }}>
-                        <Trash2 className="w-3.5 h-3.5" style={{ color: "#EF4444" }} />
-                      </button>
-                    </div>
-                  ))}
-                  {draft.features.length < 6 && (
-                    <button onClick={addFeature}
-                      className="flex items-center gap-1.5 text-xs font-semibold mt-1 px-3 py-2 rounded-lg w-full justify-center"
-                      style={{ background: c.hover, border: `1px dashed ${c.border}`, color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
-                      <Plus className="w-3.5 h-3.5" /> Özellik Ekle
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Mağaza Tasarımı — tek tıkla tema değiştir */}
-              <div>
-                <label style={{ ...labelStyle, marginBottom: 10 }}>Mağaza Tasarımı (Tema)</label>
-                <div className="flex flex-wrap gap-2">
-                  {(Object.keys(THEMES) as ThemeId[]).map((tid) => {
-                    const th = THEMES[tid];
-                    const sel = draft.theme === tid;
-                    return (
-                      <button key={tid} onClick={() => patch({ theme: tid })}
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all"
-                        style={{
-                          background: sel ? `${th.accentColor}18` : c.hover,
-                          border: sel ? `2px solid ${th.accentColor}` : `1px solid ${c.border}`,
-                          color: sel ? th.accentColor : c.textMuted,
-                          fontFamily: PANEL_BODY_FONT,
-                        }}>
-                        <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: th.accentColor }} />
-                        {th.shortName}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Domain bilgisi */}
-              <div className="rounded-xl p-3 flex items-center justify-between" style={{ background: c.cardBgSoft, border: `1px solid ${c.borderSoft}` }}>
-                <span className="text-xs flex items-center gap-1.5" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
-                  <Globe className="w-3.5 h-3.5" /> Adres
-                </span>
-                {liveHref ? (
-                  <a href={liveHref} target="_blank" rel="noopener noreferrer"
-                    className="text-xs font-semibold flex items-center gap-1 hover:underline" style={{ color: "#16A34A", fontFamily: PANEL_BODY_FONT }}>
-                    {store.custom_domain} <ExternalLink className="w-3 h-3" />
-                  </a>
-                ) : (
-                  <span className="text-xs font-mono" style={{ color: c.textSubtle }}>otomatik</span>
-                )}
+                <label style={lbl}>
+                  <span className="flex items-center gap-1.5"><FileText className="w-3 h-3 inline" /> Açıklama</span>
+                </label>
+                <textarea value={draft.description}
+                  onChange={(e) => patch({ description: e.target.value })}
+                  placeholder="Ürünün özelliklerini, hikayesini anlatın…"
+                  rows={4} maxLength={500}
+                  style={{ ...inp, resize: "vertical", lineHeight: 1.6 }} />
               </div>
 
               {err && (
-                <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                  className="text-xs" style={{ color: "#EF4444", fontFamily: PANEL_BODY_FONT }}>{err}</motion.p>
+                <p className="text-xs px-3 py-2 rounded-lg"
+                  style={{ color: "#EF4444", background: "rgba(239,68,68,0.08)", fontFamily: PANEL_BODY_FONT }}>
+                  {err}
+                </p>
               )}
             </div>
 
-            {/* Footer aksiyonları */}
-            <div className="flex-shrink-0 px-5 py-4 flex items-center gap-2.5"
+            {/* Footer */}
+            <div className="flex items-center gap-2.5 px-6 py-4 flex-shrink-0"
               style={{ borderTop: `1px solid ${c.border}`, background: c.cardBg }}>
-              {/* Yayın toggle */}
+              {/* Status toggle */}
               <button onClick={() => patch({ status: isLive ? "pending" : "active" })}
                 className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold flex-shrink-0"
                 style={{
                   background: isLive ? "rgba(34,197,94,0.12)" : c.hover,
                   border: `1px solid ${isLive ? "rgba(34,197,94,0.3)" : c.border}`,
-                  color: isLive ? "#16A34A" : c.textMuted, fontFamily: PANEL_BODY_FONT,
+                  color: isLive ? "#16A34A" : c.textMuted,
+                  fontFamily: PANEL_BODY_FONT,
                 }}>
                 <Power className="w-3.5 h-3.5" /> {isLive ? "Yayında" : "Taslak"}
               </button>
 
-              <motion.button
-                onClick={handleSave} disabled={saving || !dirty}
+              <button onClick={onClose} disabled={saving}
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background: c.hover, border: `1px solid ${c.border}`, color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
+                İptal
+              </button>
+
+              <motion.button onClick={handleSave} disabled={saving || !dirty}
                 whileHover={{ scale: saving || !dirty ? 1 : 1.02 }} whileTap={{ scale: 0.97 }}
-                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold disabled:opacity-50"
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold disabled:opacity-40"
                 style={{ background: c.ctaBg, color: c.ctaText, fontFamily: PANEL_BODY_FONT }}>
                 {saving
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Kaydediliyor</>
-                  : <><Save className="w-4 h-4" /> Değişiklikleri Kaydet</>}
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Kaydediliyor…</>
+                  : <><Save className="w-4 h-4" /> Kaydet</>}
               </motion.button>
             </div>
-          </motion.aside>
+          </motion.div>
         </>
       )}
     </AnimatePresence>

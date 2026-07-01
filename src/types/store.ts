@@ -6,7 +6,10 @@ export type Product = {
   name: string;
   size_variants: string[] | null;
   price: number;
+  currency?: string | null;
+  description?: string | null;
   image_url?: string | null;
+  status?: string | null; // 'active' | 'pending'
 };
 
 export type Store = {
