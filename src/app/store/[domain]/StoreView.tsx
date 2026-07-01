@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Menu, X, ShoppingBag, ArrowRight, ChevronLeft, ChevronRight, ChevronDown,
   Truck, RefreshCcw, ShieldCheck, Gem, Award, Package,
   Instagram, Twitter, Facebook,
 } from "lucide-react";
-import { THEMES, type ThemeId, type ThemeConfig } from "@/types/theme";
+import { THEMES, themeFontStack, type ThemeId, type ThemeConfig } from "@/types/theme";
 import type { Store, StoreThemeSettings } from "@/types/store";
 import { CartProvider, useCart } from "@/lib/cart";
 import CartDrawer from "@/components/store/CartDrawer";
@@ -26,7 +27,7 @@ interface Props {
 
 type LayoutVariant = "luxury" | "artisan" | "tech";
 
-function getLayout(id: ThemeId): LayoutVariant {
+export function getLayout(id: ThemeId): LayoutVariant {
   if (id === "luxury") return "luxury";
   if (id === "artisan") return "artisan";
   return "tech";
@@ -35,7 +36,7 @@ function getLayout(id: ThemeId): LayoutVariant {
 // ─── theme_settings override (Canlı Tema Editörü yayınları) ───────────────────────
 // stores.theme_settings jsonb'daki özelleştirmeler baz temanın üzerine giydirilir.
 
-function contrastText(hex: string): string {
+export function contrastText(hex: string): string {
   const m = hex.replace("#", "");
   const full = m.length === 3 ? m.split("").map((ch) => ch + ch).join("") : m.slice(0, 6);
   const r = parseInt(full.slice(0, 2), 16) || 0;
@@ -50,7 +51,7 @@ function withAlpha(hex: string, alphaHex: string): string {
   return `#${full}${alphaHex}`;
 }
 
-function applyThemeSettings(base: ThemeConfig, ts: StoreThemeSettings | null): ThemeConfig {
+export function applyThemeSettings(base: ThemeConfig, ts: StoreThemeSettings | null): ThemeConfig {
   if (!ts) return base;
   const merged: ThemeConfig = { ...base };
   if (ts.primary_color) {
@@ -71,6 +72,13 @@ function applyThemeSettings(base: ThemeConfig, ts: StoreThemeSettings | null): T
     merged.bannerBg         = p;
   }
   if (ts.button_radius != null) merged.btnRadius = `${ts.button_radius}px`;
+
+  // Tipografi override — Google Fonts (globals.css'te yüklü)
+  const heading = themeFontStack(ts.font_heading);
+  const body    = themeFontStack(ts.font_body);
+  if (heading) merged.fontFamily     = heading;
+  if (body)    merged.fontFamilySans = body;
+
   return merged;
 }
 
@@ -136,17 +144,29 @@ function FadeImage({
 }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  // Cache'ten anında gelen görsellerde onLoad, handler bağlanmadan (hydration öncesi)
+  // ateşlenebilir → loaded hiç true olmaz ve ilk görsel placeholder'da takılı kalır.
+  // Mount/src değişiminde img.complete kontrolüyle bu yarış durumu kapatılır.
+  useEffect(() => {
+    setFailed(false);
+    const img = imgRef.current;
+    if (img?.complete && img.naturalWidth > 0) setLoaded(true);
+    else setLoaded(false);
+  }, [src]);
 
   if (failed) return <>{fallback ?? null}</>;
 
   return (
     <>
       <motion.img
+        ref={imgRef}
         src={src}
         alt={alt}
         className={className}
         style={style}
-        initial={{ opacity: 0 }}
+        initial={false}
         animate={{ opacity: loaded ? 1 : 0 }}
         transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
         onLoad={() => setLoaded(true)}
@@ -248,6 +268,27 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
   const t      = applyThemeSettings(THEMES[themeId], ts);
   const layout = getLayout(themeId);
 
+  // ── Vitrin içi link tabanı ────────────────────────────────────────────────
+  // Custom domain'de (vivinth.com) pathname "/" gelir → linkler kök-göreli olur,
+  // middleware her path'i /store/<domain>/... altına rewrite eder.
+  // Platform üzerinde (optiefy.com/store/<domain>) taban ilk iki segmenttir.
+  const pathname  = usePathname() ?? "";
+  const base      = pathname.startsWith("/store/") ? pathname.split("/").slice(0, 3).join("/") : "";
+  const storeHref = (p: string) => (previewMode ? "#" : `${base}${p}` || "/");
+
+  const NAV_LINKS = [
+    { label: "Tüm Ürünler",  href: storeHref("/urunler") },
+    { label: "Koleksiyonlar", href: storeHref("/urunler") },
+    { label: "Hakkımızda",   href: "#hakkimizda" },
+    { label: "İletişim",     href: "#iletisim" },
+  ];
+
+  const LEGAL_LINKS = [
+    { label: "Gizlilik Politikası",        href: storeHref("/legal/gizlilik-politikasi") },
+    { label: "Mesafeli Satış Sözleşmesi",  href: storeHref("/legal/mesafeli-satis-sozlesmesi") },
+    { label: "İade ve İptal Koşulları",    href: storeHref("/legal/iade-ve-iptal-kosullari") },
+  ];
+
   // Duyuru barı — theme_settings.announcement_text doluysa vitrinin en üstünde gösterilir
   const announcement  = ts?.announcement_text?.trim() ?? "";
   const announceH     = announcement ? 36 : 0;
@@ -322,6 +363,30 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
     return () => obs.disconnect();
   }, []);
 
+  // ─── Mobil galeri touch-swipe — parmakla sağa/sola kaydırınca görsel değişir ────
+  const touchStartX = useRef<number | null>(null);
+  const touchDeltaX = useRef(0);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchDeltaX.current = 0;
+  };
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStartX.current !== null) touchDeltaX.current = e.touches[0].clientX - touchStartX.current;
+  };
+  const handleTouchEnd = () => {
+    if (touchStartX.current === null) return;
+    const dx = touchDeltaX.current;
+    if (Math.abs(dx) > 48 && images.length > 1) {
+      setActiveImg((i) => dx < 0 ? (i + 1) % images.length : (i - 1 + images.length) % images.length);
+    }
+    touchStartX.current = null;
+    touchDeltaX.current = 0;
+  };
+  const swipeHandlers = images.length > 1
+    ? { onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd }
+    : {};
+
   const scrollToBuy = () => buyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   const heroImage   = images[0] ?? null;
   const buildItem   = () => ({ id: store.id, name: productName, price: productPrice, image: heroImage });
@@ -331,8 +396,13 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
   // ─── Per-layout font tokens ────────────────────────────────────────────────────
   const luxurySerif  = '"DM Serif Display", Georgia, serif';
   const artisanSerif = '"Lora", Georgia, serif';
-  const titleFont    = layout === "luxury" ? luxurySerif : layout === "artisan" ? artisanSerif : t.fontFamily;
+  const customHeading = themeFontStack(ts?.font_heading);
+  const titleFont    = customHeading ?? (layout === "luxury" ? luxurySerif : layout === "artisan" ? artisanSerif : t.fontFamily);
   const heroSize     = layout === "luxury" ? "clamp(3rem, 9vw, 6.5rem)" : "clamp(2.6rem, 7vw, 5rem)";
+
+  // Hero metin override'ları — theme_settings doluysa DB verisinin önüne geçer
+  const heroTitle    = ts?.hero_title?.trim()    || productName;
+  const heroSubtitle = ts?.hero_subtitle?.trim() || description || SLOGAN;
 
   // Header icon color — white over full-bleed hero image, themed once scrolled
   const headerIconColor = scrolled ? t.titleColor : "#FFFFFF";
@@ -391,24 +461,33 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
           <Menu className="w-5 h-5" style={{ color: headerIconColor }} />
         </button>
 
-        <nav className="hidden md:flex items-center gap-9 flex-1">
-          {["Koleksiyon", "Hikaye", "İletişim"].map((item) => (
+        <nav className="hidden md:flex items-center gap-8 flex-1">
+          {NAV_LINKS.map(({ label, href }) => (
             <a
-              key={item} href="#"
+              key={label} href={href}
               className="text-[13px] font-medium tracking-wide transition-opacity hover:opacity-50"
               style={{ color: scrolled ? t.textColor : "rgba(255,255,255,0.85)" }}
             >
-              {item}
+              {label}
             </a>
           ))}
         </nav>
 
-        <h1
-          className="text-[15px] md:text-base font-black tracking-[0.3em] uppercase md:absolute md:left-1/2 md:-translate-x-1/2"
-          style={{ color: headerIconColor, fontFamily: t.fontFamily }}
-        >
-          {brand}
-        </h1>
+        {ts?.logo_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={ts.logo_url}
+            alt={brand}
+            className="h-7 md:h-8 w-auto object-contain md:absolute md:left-1/2 md:-translate-x-1/2"
+          />
+        ) : (
+          <h1
+            className="text-[15px] md:text-base font-black tracking-[0.3em] uppercase md:absolute md:left-1/2 md:-translate-x-1/2"
+            style={{ color: headerIconColor, fontFamily: t.fontFamily }}
+          >
+            {brand}
+          </h1>
+        )}
 
         <div className="flex-1 flex justify-end">
           <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={openDrawer} className="relative p-1.5 -mr-1.5">
@@ -448,13 +527,13 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
                 <button onClick={() => setMenuOpen(false)}><X className="w-5 h-5" style={{ color: t.subtleText }} /></button>
               </div>
               <nav className="flex flex-col">
-                {["Ana Sayfa", "Koleksiyon", "Hikaye", "İletişim"].map((item) => (
+                {[{ label: "Ana Sayfa", href: previewMode ? "#" : (base || "/") }, ...NAV_LINKS].map(({ label, href }) => (
                   <a
-                    key={item} href="#" onClick={() => setMenuOpen(false)}
+                    key={label} href={href} onClick={() => setMenuOpen(false)}
                     className="text-base py-4 transition-opacity hover:opacity-50"
                     style={{ color: t.textColor, borderBottom: `1px solid ${t.borderColor}`, fontFamily: t.fontFamilySans }}
                   >
-                    {item}
+                    {label}
                   </a>
                 ))}
               </nav>
@@ -506,6 +585,14 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
           />
         )}
 
+        {/* ── Kullanıcı tanımlı ek karartma — theme_settings.hero_overlay (0–90%) ── */}
+        {ts?.hero_overlay != null && ts.hero_overlay > 0 && (
+          <div
+            className="absolute inset-0"
+            style={{ background: "#000000", opacity: Math.min(ts.hero_overlay, 90) / 100 }}
+          />
+        )}
+
         {/* Caption — anchored to bottom, layout-specific alignment */}
         <div
           className={`absolute inset-x-0 bottom-0 px-8 md:px-16 pb-20 md:pb-28 ${layout === "luxury" ? "flex flex-col items-center text-center" : ""}`}
@@ -534,7 +621,7 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
                 fontWeight: layout === "luxury" ? 400 : layout === "artisan" ? 600 : 800,
               }}
             >
-              {productName}
+              {heroTitle}
             </h2>
 
             {/* Description from AI — fallback to static slogan */}
@@ -545,7 +632,7 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
                 fontFamily: t.fontFamilySans,
               }}
             >
-              {description ?? SLOGAN}
+              {heroSubtitle}
             </p>
 
             {/* CTA button — style varies by layout */}
@@ -592,7 +679,8 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
           {/* Full-bleed görsel — 16:10, object-cover → çerçevesiz, seamless */}
           <div
             className="relative w-full overflow-hidden"
-            style={{ aspectRatio: "16/10", background: t.bgColor }}
+            {...swipeHandlers}
+            style={{ aspectRatio: "16/10", background: t.bgColor, touchAction: "pan-y" }}
           >
             {images.length > 0 ? (
               <AnimatePresence mode="wait">
@@ -746,14 +834,16 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
 
             {/* LEFT — gallery (sticky) */}
             <div className="md:sticky md:top-28 md:self-start space-y-5">
-              {/* Sabit 1:1 kare container — max 520px × 90vw → görsel asla taşmaz */}
+              {/* Sabit 1:1 kare container — object-cover görseli kusursuz doldurur */}
               <div
                 className="relative overflow-hidden w-full"
+                {...swipeHandlers}
                 style={{
                   background:   t.galleryBg,
                   aspectRatio:  "1 / 1",
-                  maxHeight:    "min(520px, 90vw)",
+                  maxWidth:     520,
                   borderRadius: layout === "luxury" ? "4px" : "28px",
+                  touchAction:  "pan-y",
                 }}
               >
                 {images.length > 0 ? (
@@ -763,9 +853,8 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
                       <FadeImage
                         src={images[activeImg]}
                         alt={productName}
-                        /* object-contain → tüm ürün görünür, kırpılmaz */
-                        className="absolute inset-0 w-full h-full object-contain"
-                        style={{ padding: "12px" }}
+                        /* object-cover → kare çerçeveyi kusursuz doldurur, krem boşluk kalmaz */
+                        className="absolute inset-0 w-full h-full object-cover object-center"
                         fallback={<ImagePlaceholder theme={t} label={productName} tall />}
                       />
                     </motion.div>
@@ -833,7 +922,7 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
                         opacity:      i === activeImg ? 1 : 0.5,
                       }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={img} alt={`${i + 1}`} className="w-full h-full object-contain" style={{ padding: "4px" }} />
+                      <img src={img} alt={`${i + 1}`} className="w-full h-full object-cover object-center" />
                     </motion.button>
                   ))}
                 </div>
@@ -1067,7 +1156,8 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
 
       {/* ════ "NEDEN BİZ?" STRIP ════ */}
       <section
-        className="py-20"
+        id="hakkimizda"
+        className="py-20 scroll-mt-24"
         style={{ background: t.cardBg, borderTop: `1px solid ${t.borderColor}`, borderBottom: `1px solid ${t.borderColor}` }}
       >
         <div className="max-w-5xl mx-auto px-6 md:px-10 grid grid-cols-1 sm:grid-cols-3 gap-10 sm:gap-6">
@@ -1125,7 +1215,7 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
                     {prodImg ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={prodImg} alt={prod.name}
-                        className="w-full h-full object-contain p-3" />
+                        className="w-full h-full object-cover object-center" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         <Package style={{ width: 40, height: 40, color: t.accentColor, opacity: 0.3 }} />
@@ -1149,7 +1239,7 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
       )}
 
       {/* ════ FOOTER ════ */}
-      <footer style={{ background: t.footerBg }}>
+      <footer id="iletisim" className="scroll-mt-24" style={{ background: t.footerBg }}>
         <div className="max-w-7xl mx-auto px-6 md:px-12 py-16">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-10 mb-12">
             <div>
@@ -1161,8 +1251,8 @@ function StoreViewInner({ store, overrideTheme, previewMode }: Props) {
               </p>
             </div>
             <nav className="flex flex-wrap gap-x-9 gap-y-3">
-              {["Hikaye", "Koleksiyon", "Gizlilik", "İade Koşulları", "İletişim"].map((link) => (
-                <a key={link} href="#" className="text-sm text-white/40 hover:text-white/80 transition-colors">{link}</a>
+              {[{ label: "Tüm Ürünler", href: storeHref("/urunler") }, ...LEGAL_LINKS].map(({ label, href }) => (
+                <a key={label} href={href} className="text-sm text-white/40 hover:text-white/80 transition-colors">{label}</a>
               ))}
             </nav>
             <div className="flex items-center gap-5">

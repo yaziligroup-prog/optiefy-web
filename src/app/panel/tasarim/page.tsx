@@ -2,43 +2,70 @@
 
 /**
  * Canlı Tema Editörü — Shopify Customizer hissiyatında iki sütunlu editör.
- * Sol: ayar paneli · Sağ: tamamen yerel state'ten beslenen anlık önizleme.
- * "Değişiklikleri Yayınla" theme_settings JSON'ını /api/stores PATCH'ine gönderir.
+ * Sol: derin özelleştirme paneli · Sağ: StoreView'in birebir ikizi canlı önizleme.
+ * Tüm önizleme tamamen yerel React state'inden beslenir — sıfır gecikme.
+ * Kaydedilmemiş değişiklik varsa altta floating bar çıkar (İptal / Yayınla).
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  Store, Megaphone, Palette, Circle, Rocket, Loader2, CheckCircle,
-  AlertCircle, ShoppingBag, Search, Heart, Sparkles, Star, Monitor,
+  Store as StoreIcon, Megaphone, Palette, Circle, Rocket, Loader2, CheckCircle,
+  AlertCircle, ShoppingBag, Monitor, Type, Image as ImageIcon, LayoutTemplate,
+  Upload, X, ArrowRight, Sparkles, Undo2, Truck, Award, Gem,
 } from "lucide-react";
 import {
   usePanelTheme, PANEL_BODY_FONT, PANEL_DISPLAY_FONT, type PanelPalette,
 } from "../_lib/theme";
 import { useActiveStore } from "../_lib/storeContext";
+import { THEMES, THEME_FONT_NAMES, themeFontStack, type ThemeId } from "@/types/theme";
+import type { Store } from "@/types/store";
 
-// ─── Theme settings modeli ────────────────────────────────────────────────────
-// Yayınlandığında stores.theme_settings (jsonb) kolonuna bu şekilde yazılır.
+// ─── Editor state modeli ─────────────────────────────────────────────────────
+// Yayınlandığında stores.theme_settings (jsonb) kolonuna snake_case yazılır.
 
-export type ThemeSettings = {
+type EditorSettings = {
   storeName:        string;
   announcementText: string;
   primaryColor:     string;
   buttonRadius:     number; // px
+  fontHeading:      string; // "" → tema varsayılanı
+  fontBody:         string; // "" → tema varsayılanı
+  heroTitle:        string; // "" → ürün adı
+  heroSubtitle:     string; // "" → mağaza açıklaması
+  heroOverlay:      number; // 0–90 ek karartma %
+  logoUrl:          string; // "" → metin logo
 };
 
-const DEFAULT_SETTINGS: ThemeSettings = {
-  storeName:        "Mağazam",
-  announcementText: "2000 TL üzeri ücretsiz kargo!",
-  primaryColor:     "#7C3AED",
-  buttonRadius:     12,
-};
+const SLOGAN = "Ustaların elinde şekillenen, zamana meydan okuyan bir tasarım.";
 
 const COLOR_PRESETS = [
   "#7C3AED", "#EC4899", "#0EA5E9", "#059669", "#F59E0B", "#DC2626", "#111111",
 ];
 
 type FeedbackState = { type: "success" | "error"; message: string } | null;
+
+// Aktif mağazanın DB halini editor state'ine çevirir — baseline (dirty kıyası) budur
+function fromStore(s: Store): EditorSettings {
+  const ts = s.theme_settings;
+  return {
+    storeName:        s.store_name ?? "",
+    announcementText: ts?.announcement_text ?? "",
+    primaryColor:     ts?.primary_color     ?? "#7C3AED",
+    buttonRadius:     ts?.button_radius     ?? 12,
+    fontHeading:      ts?.font_heading      ?? "",
+    fontBody:         ts?.font_body         ?? "",
+    heroTitle:        ts?.hero_title        ?? "",
+    heroSubtitle:     ts?.hero_subtitle     ?? "",
+    heroOverlay:      ts?.hero_overlay      ?? 0,
+    logoUrl:          ts?.logo_url          ?? "",
+  };
+}
+
+const FALLBACK_SETTINGS: EditorSettings = {
+  storeName: "Mağazam", announcementText: "", primaryColor: "#7C3AED", buttonRadius: 12,
+  fontHeading: "", fontBody: "", heroTitle: "", heroSubtitle: "", heroOverlay: 0, logoUrl: "",
+};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -75,24 +102,68 @@ function SettingLabel({ icon: Icon, iconColor, title, c }: {
   );
 }
 
-function TextSetting({ icon, iconColor, title, value, onChange, placeholder, c }: {
+function inputStyle(c: PanelPalette): React.CSSProperties {
+  return {
+    background: c.inputBg, border: `1px solid ${c.border}`, color: c.text,
+    fontFamily: PANEL_BODY_FONT, transition: "border-color 0.2s",
+  };
+}
+
+function TextSetting({ icon, iconColor, title, value, onChange, placeholder, c, textarea }: {
   icon: React.ElementType; iconColor: string; title: string;
-  value: string; onChange: (v: string) => void; placeholder: string; c: PanelPalette;
+  value: string; onChange: (v: string) => void; placeholder: string;
+  c: PanelPalette; textarea?: boolean;
 }) {
   return (
     <div className="space-y-2.5">
       <SettingLabel icon={icon} iconColor={iconColor} title={title} c={c} />
+      {textarea ? (
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          rows={2}
+          className="w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none resize-none"
+          style={inputStyle(c)}
+        />
+      ) : (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none"
+          style={inputStyle(c)}
+        />
+      )}
+    </div>
+  );
+}
+
+function SliderSetting({ icon, iconColor, title, value, onChange, min, max, unit, marks, accent, c }: {
+  icon: React.ElementType; iconColor: string; title: string;
+  value: number; onChange: (v: number) => void;
+  min: number; max: number; unit: string; marks: [string, string, string];
+  accent: string; c: PanelPalette;
+}) {
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between">
+        <SettingLabel icon={icon} iconColor={iconColor} title={title} c={c} />
+        <span className="text-xs font-mono px-2 py-0.5 rounded-md"
+          style={{ background: c.hover, color: c.textMuted, border: `1px solid ${c.borderSoft}` }}>
+          {value}{unit}
+        </span>
+      </div>
       <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none"
-        style={{
-          background: c.inputBg, border: `1px solid ${c.border}`, color: c.text,
-          fontFamily: PANEL_BODY_FONT, transition: "border-color 0.2s",
-        }}
+        type="range" min={min} max={max} step={1} value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full cursor-pointer"
+        style={{ accentColor: accent }}
       />
+      <div className="flex justify-between text-[10px]" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+        <span>{marks[0]}</span><span>{marks[1]}</span><span>{marks[2]}</span>
+      </div>
     </div>
   );
 }
@@ -103,17 +174,14 @@ function ColorSetting({ value, onChange, c }: {
   return (
     <div className="space-y-2.5">
       <SettingLabel icon={Palette} iconColor="#EC4899" title="Ana Renk" c={c} />
-
       <div className="flex items-center gap-2.5">
-        {/* Native color picker — şık bir swatch içine gömülü */}
         <label
           className="relative w-11 h-11 rounded-xl cursor-pointer overflow-hidden flex-shrink-0"
           style={{ background: value, border: `1px solid ${c.border}`, boxShadow: `0 2px 8px ${value}40` }}
           title="Renk seç"
         >
           <input
-            type="color"
-            value={value}
+            type="color" value={value}
             onChange={(e) => onChange(e.target.value)}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
@@ -129,8 +197,6 @@ function ColorSetting({ value, onChange, c }: {
           style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}
         />
       </div>
-
-      {/* Hazır paletler */}
       <div className="flex items-center gap-2 flex-wrap pt-0.5">
         {COLOR_PRESETS.map((preset) => {
           const active = preset.toLowerCase() === value.toLowerCase();
@@ -155,142 +221,303 @@ function ColorSetting({ value, onChange, c }: {
   );
 }
 
-function RadiusSetting({ value, onChange, primaryColor, c }: {
-  value: number; onChange: (v: number) => void; primaryColor: string; c: PanelPalette;
+function FontSelect({ label, value, onChange, c }: {
+  label: string; value: string; onChange: (v: string) => void; c: PanelPalette;
 }) {
   return (
-    <div className="space-y-2.5">
-      <div className="flex items-center justify-between">
-        <SettingLabel icon={Circle} iconColor="#0EA5E9" title="Buton Köşe Yuvarlaklığı" c={c} />
-        <span className="text-xs font-mono px-2 py-0.5 rounded-md"
-          style={{ background: c.hover, color: c.textMuted, border: `1px solid ${c.borderSoft}` }}>
-          {value}px
-        </span>
-      </div>
-      <input
-        type="range"
-        min={0}
-        max={28}
-        step={1}
+    <div className="space-y-1.5">
+      <label className="text-[11px] font-medium block" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+        {label}
+      </label>
+      <select
         value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full cursor-pointer"
-        style={{ accentColor: primaryColor }}
-      />
-      <div className="flex justify-between text-[10px]" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
-        <span>Keskin</span>
-        <span>Yumuşak</span>
-        <span>Hap (Pill)</span>
-      </div>
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none cursor-pointer appearance-none"
+        style={{ ...inputStyle(c), fontFamily: themeFontStack(value) ?? PANEL_BODY_FONT }}
+      >
+        <option value="">Tema Varsayılanı</option>
+        {THEME_FONT_NAMES.map((name) => (
+          <option key={name} value={name}>{name}</option>
+        ))}
+      </select>
+      {value && (
+        <p className="text-sm px-1 pt-0.5" style={{ color: c.textMuted, fontFamily: themeFontStack(value) ?? undefined }}>
+          Önizleme — Şık vitrinler AaBbÇç 0123
+        </p>
+      )}
     </div>
   );
 }
 
-// ─── Canlı önizleme (mockup dükkan) ──────────────────────────────────────────
+function LogoSetting({ value, onChange, c, onError }: {
+  value: string; onChange: (v: string) => void; c: PanelPalette;
+  onError: (msg: string) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
 
-const MOCK_PRODUCTS = [
-  { name: "El Yapımı Seramik Vazo", price: "₺1.450", gradient: "linear-gradient(135deg,#FDE68A,#F59E0B)" },
-  { name: "Doğal Keten Örtü",       price: "₺890",   gradient: "linear-gradient(135deg,#BFDBFE,#60A5FA)" },
-  { name: "Ahşap Takı Kutusu",      price: "₺1.190", gradient: "linear-gradient(135deg,#FBCFE8,#EC4899)" },
-];
-
-function StorePreview({ s }: { s: ThemeSettings }) {
-  const btnText = contrastText(s.primaryColor);
-  const radius  = `${s.buttonRadius}px`;
+  const handleFile = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { onError("Lütfen bir görsel dosyası seçin."); return; }
+    if (file.size > 1024 * 1024) { onError("Logo dosyası 1 MB'den küçük olmalıdır."); return; }
+    const reader = new FileReader();
+    reader.onload = () => onChange(String(reader.result ?? ""));
+    reader.readAsDataURL(file);
+  };
 
   return (
-    <div className="w-full h-full flex flex-col overflow-hidden bg-white">
+    <div className="space-y-2.5">
+      <SettingLabel icon={ImageIcon} iconColor="#059669" title="Mağaza Logosu" c={c} />
 
-      {/* Duyuru barı */}
+      {value && (
+        <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+          style={{ background: c.cardBgSoft, border: `1px solid ${c.borderSoft}` }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={value} alt="Logo önizleme" className="h-8 max-w-[140px] w-auto object-contain rounded" />
+          <button
+            onClick={() => onChange("")}
+            className="ml-auto w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={{ background: "#DC262612", border: "1px solid #DC262630" }}
+            title="Logoyu kaldır"
+          >
+            <X className="w-3.5 h-3.5" style={{ color: "#DC2626" }} />
+          </button>
+        </div>
+      )}
+
+      <input
+        type="text"
+        value={value.startsWith("data:") ? "" : value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="https://…/logo.png"
+        className="w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none"
+        style={inputStyle(c)}
+      />
+
+      <button
+        onClick={() => fileRef.current?.click()}
+        className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold"
+        style={{ background: c.hover, border: `1px dashed ${c.border}`, color: c.textMuted, fontFamily: PANEL_BODY_FONT }}
+      >
+        <Upload className="w-3.5 h-3.5" />
+        Bilgisayardan Yükle (max 1 MB)
+      </button>
+      <input
+        ref={fileRef} type="file" accept="image/*" className="hidden"
+        onChange={(e) => { handleFile(e.target.files?.[0]); e.target.value = ""; }}
+      />
+      <p className="text-[10px]" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+        Logo yüklendiğinde vitrindeki metin logonun yerini alır.
+      </p>
+    </div>
+  );
+}
+
+// ─── Canlı önizleme — StoreView'in birebir ikizi (yerel state'ten beslenir) ───
+
+const WHY = [
+  { icon: Truck, label: "Ücretsiz Kargo",   sub: "Sigortalı & özel ambalaj" },
+  { icon: Award, label: "El Yapımı Kalite", sub: "Ustaların imzasıyla" },
+  { icon: Gem,   label: "1. Sınıf Malzeme", sub: "Doğal & dayanıklı" },
+];
+
+function PreviewStore({ s, store }: { s: EditorSettings; store: Store | null }) {
+  // Baz tema — StoreView ile aynı çözümleme (store.theme → THEMES)
+  const themeId: ThemeId =
+    store?.theme && THEMES[store.theme as ThemeId] ? (store.theme as ThemeId) : "modern";
+  const t      = THEMES[themeId];
+  const layout = themeId === "luxury" ? "luxury" : themeId === "artisan" ? "artisan" : "tech";
+
+  const headingFont =
+    themeFontStack(s.fontHeading) ??
+    (layout === "luxury" ? '"DM Serif Display", Georgia, serif'
+      : layout === "artisan" ? '"Lora", Georgia, serif'
+      : t.fontFamily);
+  const bodyFont = themeFontStack(s.fontBody) ?? t.fontFamilySans;
+
+  const primary = s.primaryColor;
+  const btnText = contrastText(primary);
+  const radius  = `${s.buttonRadius}px`;
+
+  const brand        = s.storeName.trim() || store?.store_name || "Mağazam";
+  const productName  = store?.seo_title ?? store?.store_name ?? brand;
+  const heroTitle    = s.heroTitle.trim() || productName;
+  const heroSubtitle = s.heroSubtitle.trim() || store?.description?.trim() || SLOGAN;
+  const heroImage    = store?.image_urls?.[0] ?? null;
+  const galleryImage = store?.image_urls?.[1] ?? heroImage;
+
+  const price = store?.product_price ?? 0;
+  const priceStr = store?.currency === "USD"
+    ? "$" + price.toLocaleString("en-US", { minimumFractionDigits: 2 })
+    : price.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " ₺";
+
+  const features = (store?.features ?? []).slice(0, 3);
+
+  // StoreView'deki layout'a özgü hero overlay gradyanları
+  const layoutOverlay =
+    layout === "luxury"  ? "linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.30) 55%, rgba(0,0,0,0.78) 100%)"
+    : layout === "artisan" ? "linear-gradient(150deg, rgba(61,51,38,0.60) 0%, rgba(0,0,0,0.15) 55%, rgba(0,0,0,0.70) 100%)"
+    : "linear-gradient(105deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.45) 48%, rgba(0,0,0,0.08) 100%)";
+
+  return (
+    <div className="w-full flex flex-col overflow-hidden" style={{ background: t.bgColor, fontFamily: bodyFont }}>
+
+      {/* ── Duyuru barı ── */}
       {s.announcementText.trim() !== "" && (
         <div className="px-4 py-2 text-center text-[11px] font-semibold tracking-wide flex items-center justify-center gap-1.5"
-          style={{ background: s.primaryColor, color: btnText }}>
+          style={{ background: primary, color: btnText }}>
           <Sparkles className="w-3 h-3 flex-shrink-0" />
           <span className="truncate">{s.announcementText}</span>
         </div>
       )}
 
-      {/* Navbar */}
-      <div className="flex items-center justify-between px-6 py-3.5 border-b border-gray-100 bg-white">
-        <span className="text-sm font-black tracking-tight text-gray-900 truncate max-w-[40%]"
-          style={{ fontFamily: PANEL_DISPLAY_FONT }}>
-          {s.storeName.trim() || "Mağazam"}
-        </span>
-        <div className="hidden sm:flex items-center gap-5 text-[11px] font-medium text-gray-500">
-          <span>Yeni Gelenler</span>
-          <span>Koleksiyon</span>
-          <span style={{ color: s.primaryColor }} className="font-semibold">İndirim</span>
+      {/* ── HERO — StoreView ikizi: full-bleed görsel + transparan header ── */}
+      <div className="relative w-full overflow-hidden" style={{ height: 440 }}>
+
+        <div className="absolute inset-0" style={{ background: t.galleryBg }} />
+        {heroImage && (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img src={heroImage} alt={heroTitle} className="absolute inset-0 w-full h-full object-cover object-center" />
+        )}
+
+        {/* Layout'a özgü gradyan + kullanıcı tanımlı ek karartma */}
+        <div className="absolute inset-0" style={{ background: layoutOverlay }} />
+        {s.heroOverlay > 0 && (
+          <div className="absolute inset-0" style={{ background: "#000000", opacity: Math.min(s.heroOverlay, 90) / 100 }} />
+        )}
+
+        {/* Transparan header */}
+        <div className="absolute top-0 inset-x-0 flex items-center justify-between px-6 h-14 z-10">
+          <nav className="hidden sm:flex items-center gap-5 flex-1">
+            {["Tüm Ürünler", "Koleksiyonlar", "Hakkımızda"].map((item) => (
+              <span key={item} className="text-[10px] font-medium tracking-wide" style={{ color: "rgba(255,255,255,0.85)" }}>
+                {item}
+              </span>
+            ))}
+          </nav>
+          {s.logoUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src={s.logoUrl} alt={brand} className="h-6 w-auto object-contain sm:absolute sm:left-1/2 sm:-translate-x-1/2" />
+          ) : (
+            <span
+              className="text-xs font-black tracking-[0.3em] uppercase sm:absolute sm:left-1/2 sm:-translate-x-1/2 truncate max-w-[45%]"
+              style={{ color: "#FFFFFF", fontFamily: headingFont }}
+            >
+              {brand}
+            </span>
+          )}
+          <div className="flex-1 flex justify-end">
+            <div className="relative">
+              <ShoppingBag className="w-4 h-4" style={{ color: "#FFFFFF" }} />
+              <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full text-[8px] font-extrabold flex items-center justify-center"
+                style={{ background: primary, color: btnText }}>
+                2
+              </span>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-3 text-gray-400">
-          <Search className="w-3.5 h-3.5" />
-          <Heart className="w-3.5 h-3.5" />
-          <div className="relative">
-            <ShoppingBag className="w-3.5 h-3.5" />
-            <span className="absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full text-[7px] font-bold flex items-center justify-center"
-              style={{ background: s.primaryColor, color: btnText }}>
-              2
+
+        {/* Alt-orta caption — luxury hizalaması (vivinth görünümü) */}
+        <div className="absolute inset-x-0 bottom-0 px-8 pb-9 flex flex-col items-center text-center z-10">
+          <p className="text-[8px] font-bold tracking-[0.35em] uppercase mb-3" style={{ color: "rgba(255,255,255,0.65)" }}>
+            {brand} · El Yapımı Koleksiyon
+          </p>
+          <h2
+            className="leading-[1.05] tracking-tight mb-3 max-w-lg"
+            style={{
+              color: "#FFFFFF", fontFamily: headingFont,
+              fontSize: "clamp(1.5rem, 3.2vw, 2.5rem)",
+              fontWeight: layout === "luxury" ? 400 : layout === "artisan" ? 600 : 800,
+            }}
+          >
+            {heroTitle}
+          </h2>
+          <p className="text-[11px] leading-relaxed mb-5 max-w-sm mx-auto" style={{ color: "rgba(255,255,255,0.75)" }}>
+            {heroSubtitle}
+          </p>
+          <span
+            className="inline-flex items-center gap-2 px-6 py-2.5 text-[11px] font-bold tracking-wide"
+            style={{
+              background: "rgba(255,255,255,0.14)", color: "#FFFFFF",
+              border: "1.5px solid rgba(255,255,255,0.45)",
+              borderRadius: radius, backdropFilter: "blur(12px)",
+            }}
+          >
+            Koleksiyonu Keşfet <ArrowRight className="w-3 h-3" />
+          </span>
+        </div>
+      </div>
+
+      {/* ── SATIN ALMA BÖLÜMÜ — gerçek ürün verisiyle ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center px-6 py-7">
+        <div className="relative w-full overflow-hidden" style={{ aspectRatio: "4/3", background: t.cardBg, borderRadius: 14 }}>
+          {galleryImage ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src={galleryImage} alt={productName} className="absolute inset-0 w-full h-full object-cover" />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center" style={{ background: t.galleryBg }}>
+              <ShoppingBag className="w-8 h-8" style={{ color: primary, opacity: 0.35 }} />
+            </div>
+          )}
+        </div>
+
+        <div>
+          <p className="text-[9px] font-bold tracking-[0.3em] uppercase mb-2" style={{ color: primary }}>
+            {brand} Atölyesi
+          </p>
+          <h3 className="text-lg leading-snug mb-1.5" style={{ color: t.titleColor, fontFamily: headingFont, fontWeight: 600 }}>
+            {productName}
+          </h3>
+          <p className="text-base font-bold mb-3.5" style={{ color: t.priceColor }}>{priceStr}</p>
+
+          {features.length > 0 && (
+            <ul className="space-y-1.5 mb-5">
+              {features.map((f) => (
+                <li key={f} className="flex items-start gap-2 text-[11px]" style={{ color: t.textColor }}>
+                  <span className="mt-[5px] w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: primary }} />
+                  {f}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 text-[11px] font-bold"
+              style={{ background: "transparent", border: `1.5px solid ${primary}`, color: primary, borderRadius: radius }}
+            >
+              Sepete Ekle
+            </span>
+            <span
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 text-[11px] font-bold"
+              style={{ background: primary, color: btnText, borderRadius: radius, boxShadow: `0 6px 18px ${primary}45` }}
+            >
+              Hemen Al <ArrowRight className="w-3 h-3" />
             </span>
           </div>
         </div>
       </div>
 
-      {/* Hero */}
-      <div className="px-6 pt-8 pb-7 text-center"
-        style={{ background: `linear-gradient(180deg, ${s.primaryColor}0D 0%, #FFFFFF 100%)` }}>
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest mb-3.5"
-          style={{ background: `${s.primaryColor}15`, color: s.primaryColor, borderRadius: radius, border: `1px solid ${s.primaryColor}30` }}>
-          <Star className="w-2.5 h-2.5" /> Yeni Sezon
-        </span>
-        <h2 className="text-2xl leading-tight text-gray-900 mb-2"
-          style={{ fontFamily: PANEL_DISPLAY_FONT, fontWeight: 400, letterSpacing: "-0.02em" }}>
-          Özenle üretilen tasarımlar,<br />kapınıza kadar.
-        </h2>
-        <p className="text-[11px] text-gray-500 max-w-xs mx-auto mb-5 leading-relaxed">
-          {s.storeName.trim() || "Mağazam"} koleksiyonundaki el yapımı ürünleri keşfedin.
-        </p>
-        <div className="flex items-center justify-center gap-2.5">
-          <button
-            className="px-5 py-2.5 text-xs font-bold transition-transform hover:scale-[1.03] active:scale-[0.98]"
-            style={{
-              background: s.primaryColor, color: btnText, borderRadius: radius,
-              boxShadow: `0 6px 18px ${s.primaryColor}45`,
-            }}
-          >
-            Alışverişe Başla
-          </button>
-          <button
-            className="px-5 py-2.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200"
-            style={{ borderRadius: radius }}
-          >
-            Koleksiyonu Gör
-          </button>
-        </div>
+      {/* ── NEDEN BİZ şeridi ── */}
+      <div className="grid grid-cols-3 gap-3 px-6 py-5" style={{ background: t.cardBg, borderTop: `1px solid ${t.borderColor}` }}>
+        {WHY.map(({ icon: Icon, label, sub }) => (
+          <div key={label} className="flex flex-col items-center text-center gap-1.5">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: `${primary}14` }}>
+              <Icon className="w-3.5 h-3.5" style={{ color: primary }} />
+            </div>
+            <p className="text-[10px] font-bold" style={{ color: t.titleColor }}>{label}</p>
+            <p className="text-[9px]" style={{ color: t.subtleText }}>{sub}</p>
+          </div>
+        ))}
       </div>
 
-      {/* Ürün kartları */}
-      <div className="px-6 pb-6 flex-1">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-[11px] font-bold text-gray-900 uppercase tracking-wider">Öne Çıkanlar</span>
-          <span className="text-[10px] font-semibold" style={{ color: s.primaryColor }}>Tümünü Gör →</span>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          {MOCK_PRODUCTS.map((p) => (
-            <div key={p.name} className="overflow-hidden border border-gray-100 bg-white"
-              style={{ borderRadius: Math.min(s.buttonRadius + 4, 20) }}>
-              <div className="aspect-square" style={{ background: p.gradient }} />
-              <div className="p-2">
-                <p className="text-[9px] font-semibold text-gray-800 truncate">{p.name}</p>
-                <div className="flex items-center justify-between mt-1">
-                  <span className="text-[10px] font-bold" style={{ color: s.primaryColor }}>{p.price}</span>
-                  <span className="w-4 h-4 flex items-center justify-center text-[9px] font-bold"
-                    style={{ background: s.primaryColor, color: btnText, borderRadius: Math.max(s.buttonRadius - 6, 3) }}>
-                    +
-                  </span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+      {/* ── Footer ── */}
+      <div className="px-6 py-5 text-center" style={{ background: t.footerBg }}>
+        <p className="text-xs font-black tracking-[0.3em] uppercase" style={{ color: "rgba(255,255,255,0.85)", fontFamily: headingFont }}>
+          {brand}
+        </p>
+        <p className="text-[9px] mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>
+          © 2026 {brand} · Optiefy altyapısıyla
+        </p>
       </div>
     </div>
   );
@@ -302,33 +529,33 @@ export default function TasarimPage() {
   const { c } = usePanelTheme();
   const { activeStore, refreshStores } = useActiveStore();
 
-  const [settings,   setSettings]   = useState<ThemeSettings>(DEFAULT_SETTINGS);
+  const [settings,   setSettings]   = useState<EditorSettings>(FALLBACK_SETTINGS);
+  const [baseline,   setBaseline]   = useState<EditorSettings>(FALLBACK_SETTINGS);
   const [publishing, setPublishing] = useState(false);
   const [fb,         setFb]         = useState<FeedbackState>(null);
 
-  // Aktif mağaza değişince editörü o mağazanın kayıtlı verisiyle doldur
+  // Aktif mağaza değişince editörü + baseline'ı DB haliyle senkronize et
   useEffect(() => {
     if (!activeStore) return;
-    const saved = activeStore.theme_settings;
-    setSettings({
-      storeName:        activeStore.store_name ?? DEFAULT_SETTINGS.storeName,
-      announcementText: saved?.announcement_text ?? DEFAULT_SETTINGS.announcementText,
-      primaryColor:     saved?.primary_color     ?? DEFAULT_SETTINGS.primaryColor,
-      buttonRadius:     saved?.button_radius     ?? DEFAULT_SETTINGS.buttonRadius,
-    });
+    const snapshot = fromStore(activeStore);
+    setSettings(snapshot);
+    setBaseline(snapshot);
     setFb(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStore?.id]);
 
-  const set = <K extends keyof ThemeSettings>(key: K, value: ThemeSettings[K]) =>
+  const set = <K extends keyof EditorSettings>(key: K, value: EditorSettings[K]) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
 
-  // Yayınlanacak JSON — stores.theme_settings (jsonb) kolonu için hazır payload
-  const themeSettingsPayload = useMemo(() => ({
-    announcement_text: settings.announcementText,
-    primary_color:     settings.primaryColor,
-    button_radius:     settings.buttonRadius,
-  }), [settings]);
+  const isDirty = useMemo(
+    () => JSON.stringify(settings) !== JSON.stringify(baseline),
+    [settings, baseline],
+  );
+
+  const handleDiscard = () => {
+    setSettings(baseline);
+    setFb(null);
+  };
 
   const handlePublish = async () => {
     if (!activeStore) {
@@ -342,12 +569,23 @@ export default function TasarimPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id:             activeStore.id,
-          store_name:     settings.storeName.trim() || activeStore.store_name,
-          theme_settings: themeSettingsPayload,
+          id:         activeStore.id,
+          store_name: settings.storeName.trim() || activeStore.store_name,
+          theme_settings: {
+            announcement_text: settings.announcementText,
+            primary_color:     settings.primaryColor,
+            button_radius:     settings.buttonRadius,
+            font_heading:      settings.fontHeading  || null,
+            font_body:         settings.fontBody     || null,
+            hero_title:        settings.heroTitle    || null,
+            hero_subtitle:     settings.heroSubtitle || null,
+            hero_overlay:      settings.heroOverlay,
+            logo_url:          settings.logoUrl      || null,
+          },
         }),
       });
       if (!res.ok) throw new Error();
+      setBaseline(settings); // dirty bar kapanır
       await refreshStores(true);
       setFb({ type: "success", message: "Tasarım yayınlandı — vitrininiz güncellendi." });
     } catch {
@@ -357,7 +595,7 @@ export default function TasarimPage() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6 pb-24">
 
       {/* Başlık */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
@@ -365,19 +603,19 @@ export default function TasarimPage() {
           Canlı Tema Editörü
         </h1>
         <p className="text-sm mt-1.5" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
-          Vitrininizi kişiselleştirin — her değişiklik sağdaki önizlemede anında görünür.
+          Vitrininizi kişiselleştirin — her değişiklik sağdaki gerçek vitrin ikizinde anında görünür.
         </p>
       </motion.div>
 
       <motion.div
         initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-        className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6 items-start"
+        className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start"
       >
 
         {/* ── Sol sütun: Ayar Paneli ─────────────────────────────────── */}
-        <div className="rounded-2xl flex flex-col lg:sticky lg:top-6" style={sectionCard(c)}>
-
+        <div className="rounded-2xl lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto" style={sectionCard(c)}>
           <div className="p-6 space-y-7">
+
             {activeStore && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
                 style={{ background: c.cardBgSoft, border: `1px solid ${c.borderSoft}` }}>
@@ -389,10 +627,17 @@ export default function TasarimPage() {
             )}
 
             <TextSetting
-              icon={Store} iconColor="#7C3AED" title="Mağaza Adı"
+              icon={StoreIcon} iconColor="#7C3AED" title="Mağaza Adı"
               value={settings.storeName}
               onChange={(v) => set("storeName", v)}
               placeholder="Örn: Vivinth Atölye" c={c}
+            />
+
+            <LogoSetting
+              value={settings.logoUrl}
+              onChange={(v) => set("logoUrl", v)}
+              onError={(msg) => setFb({ type: "error", message: msg })}
+              c={c}
             />
 
             <TextSetting
@@ -404,11 +649,56 @@ export default function TasarimPage() {
 
             <ColorSetting value={settings.primaryColor} onChange={(v) => set("primaryColor", v)} c={c} />
 
-            <RadiusSetting
-              value={settings.buttonRadius}
-              onChange={(v) => set("buttonRadius", v)}
-              primaryColor={settings.primaryColor} c={c}
+            <SliderSetting
+              icon={Circle} iconColor="#0EA5E9" title="Buton Köşe Yuvarlaklığı"
+              value={settings.buttonRadius} onChange={(v) => set("buttonRadius", v)}
+              min={0} max={28} unit="px" marks={["Keskin", "Yumuşak", "Hap (Pill)"]}
+              accent={settings.primaryColor} c={c}
             />
+
+            {/* ── Tipografi ── */}
+            <div className="space-y-3">
+              <SettingLabel icon={Type} iconColor="#8B5CF6" title="Tipografi" c={c} />
+              <FontSelect label="Başlık Fontu (Headings)" value={settings.fontHeading} onChange={(v) => set("fontHeading", v)} c={c} />
+              <FontSelect label="Gövde Fontu (Body)"      value={settings.fontBody}    onChange={(v) => set("fontBody", v)}    c={c} />
+            </div>
+
+            {/* ── Hero Banner ── */}
+            <div className="space-y-4">
+              <SettingLabel icon={LayoutTemplate} iconColor="#0891B2" title="Hero Banner" c={c} />
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-medium block" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+                  Büyük Başlık — boş bırakılırsa ürün adı kullanılır
+                </label>
+                <input
+                  type="text"
+                  value={settings.heroTitle}
+                  onChange={(e) => set("heroTitle", e.target.value)}
+                  placeholder="Örn: El Yapımı Desenli Metal Kase"
+                  className="w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none"
+                  style={inputStyle(c)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-medium block" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+                  Alt Açıklama
+                </label>
+                <textarea
+                  value={settings.heroSubtitle}
+                  onChange={(e) => set("heroSubtitle", e.target.value)}
+                  placeholder="Örn: Sofralarınıza zarafet katın…"
+                  rows={2}
+                  className="w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none resize-none"
+                  style={inputStyle(c)}
+                />
+              </div>
+              <SliderSetting
+                icon={ImageIcon} iconColor="#64748B" title="Görsel Karartma"
+                value={settings.heroOverlay} onChange={(v) => set("heroOverlay", v)}
+                min={0} max={90} unit="%" marks={["Yok", "Dengeli", "Koyu"]}
+                accent={settings.primaryColor} c={c}
+              />
+            </div>
 
             {fb && (
               <motion.div
@@ -427,26 +717,14 @@ export default function TasarimPage() {
                 <span>{fb.message}</span>
               </motion.div>
             )}
-          </div>
 
-          {/* Yayınla — panelin alt footer'ı */}
-          <div className="px-6 py-5 mt-auto" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
-            <button
-              onClick={handlePublish}
-              disabled={publishing}
-              className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold disabled:opacity-60 transition-opacity"
-              style={{ background: c.ctaBg, color: c.ctaText, fontFamily: PANEL_BODY_FONT, boxShadow: c.shadowMd }}
-            >
-              {publishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
-              {publishing ? "Yayınlanıyor…" : "Değişiklikleri Yayınla"}
-            </button>
-            <p className="text-[10px] text-center mt-2.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+            <p className="text-[10px] text-center" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
               Değişiklikler yalnızca yayınladığınızda vitrininize yansır.
             </p>
           </div>
         </div>
 
-        {/* ── Sağ sütun: Canlı Önizleme ─────────────────────────────────── */}
+        {/* ── Sağ sütun: Canlı Önizleme (gerçek vitrin ikizi) ─────────── */}
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <span className="relative flex w-2 h-2">
@@ -456,6 +734,11 @@ export default function TasarimPage() {
             <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
               Canlı Önizleme
             </span>
+            {activeStore?.custom_domain && (
+              <span className="text-[10px] font-mono ml-auto" style={{ color: c.textSubtle }}>
+                {activeStore.custom_domain}
+              </span>
+            )}
           </div>
 
           {/* Tarayıcı çerçevesi */}
@@ -468,13 +751,64 @@ export default function TasarimPage() {
               </div>
               <div className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-mono truncate"
                 style={{ background: c.inputBg, color: c.textSubtle }}>
-                🔒 {(settings.storeName.trim() || "magazam").toLowerCase().replace(/\s+/g, "")}.optiefy.com
+                🔒 {activeStore?.custom_domain ?? `${(settings.storeName.trim() || "magazam").toLowerCase().replace(/\s+/g, "")}.optiefy.com`}
               </div>
             </div>
-            <StorePreview s={settings} />
+            <PreviewStore s={settings} store={activeStore} />
           </div>
         </div>
       </motion.div>
+
+      {/* ── Kaydedilmemiş Değişiklikler — Shopify tarzı floating bar ── */}
+      <AnimatePresence>
+        {isDirty && (
+          <motion.div
+            key="dirty-bar"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed bottom-6 inset-x-0 z-50 flex justify-center pointer-events-none px-4"
+          >
+            <div
+              className="pointer-events-auto flex items-center gap-3 pl-4 pr-2.5 py-2.5 rounded-2xl flex-wrap justify-center"
+              style={{
+                background: c.cardBg,
+                border: `1px solid ${c.border}`,
+                boxShadow: "0 16px 48px rgba(0,0,0,0.22)",
+              }}
+            >
+              <span className="relative flex w-2 h-2 flex-shrink-0">
+                <span className="absolute inline-flex w-full h-full rounded-full animate-ping opacity-60" style={{ background: "#F59E0B" }} />
+                <span className="relative inline-flex w-2 h-2 rounded-full" style={{ background: "#F59E0B" }} />
+              </span>
+              <span className="text-sm font-medium" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>
+                Kaydedilmemiş değişiklikleriniz var
+              </span>
+              <div className="flex items-center gap-2 ml-1">
+                <button
+                  onClick={handleDiscard}
+                  disabled={publishing}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50"
+                  style={{ background: c.hover, color: c.textMuted, border: `1px solid ${c.border}`, fontFamily: PANEL_BODY_FONT }}
+                >
+                  <Undo2 className="w-3.5 h-3.5" />
+                  İptal Et
+                </button>
+                <button
+                  onClick={handlePublish}
+                  disabled={publishing}
+                  className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold disabled:opacity-60"
+                  style={{ background: c.ctaBg, color: c.ctaText, fontFamily: PANEL_BODY_FONT }}
+                >
+                  {publishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
+                  {publishing ? "Yayınlanıyor…" : "Değişiklikleri Yayınla"}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

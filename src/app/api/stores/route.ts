@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { THEME_FONT_NAMES } from "@/types/theme";
 
 // ── Auth: server-side cookie okuma ───────────────────────────────────────────
 async function getUser() {
@@ -48,6 +49,16 @@ function sanitizeThemeSettings(raw: unknown): Record<string, unknown> | null {
   if (typeof src.announcement_text === "string") out.announcement_text = src.announcement_text.slice(0, 200);
   if (typeof src.primary_color === "string" && /^#[0-9A-Fa-f]{3,8}$/.test(src.primary_color)) out.primary_color = src.primary_color;
   if (typeof src.button_radius === "number" && Number.isFinite(src.button_radius)) out.button_radius = Math.min(Math.max(Math.round(src.button_radius), 0), 40);
+  if (typeof src.font_heading === "string" && THEME_FONT_NAMES.includes(src.font_heading)) out.font_heading = src.font_heading;
+  if (typeof src.font_body === "string" && THEME_FONT_NAMES.includes(src.font_body)) out.font_body = src.font_body;
+  if (typeof src.hero_title === "string" && src.hero_title.trim()) out.hero_title = src.hero_title.slice(0, 140);
+  if (typeof src.hero_subtitle === "string" && src.hero_subtitle.trim()) out.hero_subtitle = src.hero_subtitle.slice(0, 300);
+  if (typeof src.hero_overlay === "number" && Number.isFinite(src.hero_overlay)) out.hero_overlay = Math.min(Math.max(Math.round(src.hero_overlay), 0), 90);
+  if (
+    typeof src.logo_url === "string" &&
+    (/^https?:\/\//.test(src.logo_url) || src.logo_url.startsWith("data:image/")) &&
+    src.logo_url.length <= 1_500_000
+  ) out.logo_url = src.logo_url;
   return out;
 }
 

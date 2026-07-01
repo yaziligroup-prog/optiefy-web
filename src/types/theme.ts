@@ -1,5 +1,23 @@
 export type ThemeId = "luxury" | "modern" | "artisan" | "dynamic" | "corporate";
 
+// ─── Canlı Tema Editörü font seçenekleri ──────────────────────────────────────
+// Tüm fontlar globals.css'teki Google Fonts @import'unda yüklü olmalıdır.
+
+export const THEME_FONTS: Record<string, string> = {
+  "Playfair Display": '"Playfair Display", Georgia, serif',
+  "Lora":             '"Lora", Georgia, serif',
+  "Inter":            '"Inter", -apple-system, "Segoe UI", sans-serif',
+  "Montserrat":       '"Montserrat", "Helvetica Neue", sans-serif',
+  "Syne":             '"Syne", "Space Grotesk", sans-serif',
+  "Space Grotesk":    '"Space Grotesk", "DM Sans", sans-serif',
+};
+
+export const THEME_FONT_NAMES = Object.keys(THEME_FONTS);
+
+export function themeFontStack(name?: string | null): string | null {
+  return name ? THEME_FONTS[name] ?? null : null;
+}
+
 export interface ThemeConfig {
   id: ThemeId;
   name: string;

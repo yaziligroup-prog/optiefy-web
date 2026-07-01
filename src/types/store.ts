@@ -17,6 +17,12 @@ export type StoreThemeSettings = {
   announcement_text?: string | null;
   primary_color?:     string | null; // hex, örn: "#7C3AED"
   button_radius?:     number | null; // px
+  font_heading?:      string | null; // THEME_FONTS anahtarı, örn: "Playfair Display"
+  font_body?:         string | null; // THEME_FONTS anahtarı
+  hero_title?:        string | null; // hero büyük başlık override
+  hero_subtitle?:     string | null; // hero alt açıklama override
+  hero_overlay?:      number | null; // 0–90, hero görseli üzerine ek karartma yüzdesi
+  logo_url?:          string | null; // https URL veya data:image/... — metin logo yerine geçer
 };
 
 export type Store = {
