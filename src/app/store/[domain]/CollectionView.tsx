@@ -82,6 +82,28 @@ function CollectionInner({ store, categorySlug, categoryLabel }: {
 
   const announcement = ts?.announcement_text?.trim() ?? "";
 
+  // ── Tema iskeletine göre grid mimarisi ──────────────────────────────────────
+  // luxury: devasa 2'li, bol boşluklu, kenarlıksız · modern: kompakt 4'lü teknik
+  // artisan: klasik 3'lü · dynamic: zigzag asimetrik · corporate: standart 4'lü
+  const gridClass =
+    themeId === "luxury"   ? "grid-cols-1 md:grid-cols-2 gap-12"
+    : themeId === "modern"  ? "grid-cols-2 lg:grid-cols-4 gap-4"
+    : themeId === "artisan" ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8"
+    : themeId === "dynamic" ? "grid-cols-2 md:grid-cols-3 gap-5"
+    : "grid-cols-2 md:grid-cols-4 gap-5";
+
+  const cardHover =
+    themeId === "dynamic" ? { y: -6, rotate: 1, scale: 1.02 }
+    : themeId === "modern" ? { y: -4, boxShadow: `0 0 26px ${t.accentGlow}` }
+    : { y: -5 };
+
+  const cardRadius =
+    themeId === "luxury" ? 4
+    : themeId === "modern" ? 0
+    : themeId === "corporate" ? 12
+    : themeId === "dynamic" ? 10
+    : 16;
+
   const handleAdd = (p: Product) => {
     addItem({ id: p.id, name: p.name, price: p.price ?? 0, image: p.image_url ?? null });
     openDrawer();
@@ -180,11 +202,16 @@ function CollectionInner({ store, categorySlug, categoryLabel }: {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 md:gap-6">
+          <div className={`grid ${gridClass}`}>
             {products.map((p, i) => {
               // Amiral gemisi ürün (id === store.id) mağaza ana sayfasındaki detay
               // görünümüne, tablo ürünleri kendi /urun/[id] rotasına köprülenir
               const detailHref = p.id === store.id ? homeHref : `${base}/urun/${p.id}`;
+              // Dynamic: zigzag — her üçüncü kart daha uzun oranlı
+              const imgAspect =
+                themeId === "dynamic" ? (i % 3 === 0 ? "aspect-[4/5]" : "aspect-square")
+                : themeId === "luxury" ? "aspect-[4/5]"
+                : "aspect-square";
               return (
               <motion.a
                 key={p.id}
@@ -193,23 +220,26 @@ function CollectionInner({ store, categorySlug, categoryLabel }: {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: Math.min(i, 6) * 0.05, duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-                whileHover={{ y: -5 }}
+                whileHover={cardHover}
                 className="group overflow-hidden flex flex-col cursor-pointer"
                 style={{
-                  background: t.cardBg,
-                  border: `1px solid ${t.borderColor}`,
-                  borderRadius: layout === "luxury" ? "4px" : "20px",
+                  // Luxury: kenarlıksız, şeffaf — ultra premium mücevher havası
+                  background: themeId === "luxury" ? "transparent" : t.cardBg,
+                  border: themeId === "luxury" ? "none" : `1px solid ${t.borderColor}`,
+                  borderRadius: cardRadius,
+                  boxShadow: themeId === "corporate" ? "0 2px 10px rgba(15,44,92,0.08)" : "none",
                   textDecoration: "none",
                 }}
               >
-                {/* Görsel — kusursuz kare, object-cover */}
-                <div className="relative aspect-square overflow-hidden" style={{ background: t.galleryBg }}>
+                {/* Görsel — tema oranıyla, object-cover */}
+                <div className={`relative ${imgAspect} overflow-hidden`}
+                  style={{ background: t.galleryBg, borderRadius: themeId === "luxury" ? cardRadius : 0 }}>
                   {p.image_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={p.image_url}
                       alt={p.name}
-                      className="w-full h-full object-cover object-center transition-transform duration-500 group-hover:scale-[1.05]"
+                      className={`w-full h-full object-cover object-center transition-transform duration-500 group-hover:scale-[1.05] ${themeId === "dynamic" ? "group-hover:rotate-1" : ""}`}
                     />
                   ) : (
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -218,9 +248,11 @@ function CollectionInner({ store, categorySlug, categoryLabel }: {
                   )}
                 </div>
 
-                {/* Bilgi + hızlı sepete ekle */}
-                <div className="p-4 flex flex-col flex-1">
-                  <p className="text-sm font-semibold leading-snug mb-1 line-clamp-2" style={{ color: t.titleColor }}>
+                {/* Bilgi + aksiyon — tema karakterine göre */}
+                <div className={`flex flex-col flex-1 ${themeId === "luxury" ? "px-1 py-4 items-center text-center" : "p-4"}`}
+                  style={themeId === "artisan" ? { background: "rgba(61,51,38,0.045)" } : undefined}>
+                  <p className={`font-semibold leading-snug mb-1 line-clamp-2 ${themeId === "luxury" ? "text-base" : "text-sm"}`}
+                    style={{ color: t.titleColor, fontFamily: themeId === "luxury" ? t.fontFamily : undefined }}>
                     {p.name}
                   </p>
                   {p.size_variants && p.size_variants.length > 0 && (
@@ -228,25 +260,44 @@ function CollectionInner({ store, categorySlug, categoryLabel }: {
                       {p.size_variants.join(" · ")}
                     </p>
                   )}
-                  <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-                    <p className="text-[15px] font-bold" style={{ color: t.priceColor, fontFamily: t.fontFamily }}>
-                      {fmtPrice(p.price ?? 0)}
-                    </p>
-                    <motion.button
-                      whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }}
-                      onClick={(e) => {
-                        // Kart bir <a> — sepete ekleme, detay sayfasına gitmesin
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleAdd(p);
-                      }}
-                      title="Sepete Ekle"
-                      className="w-9 h-9 flex items-center justify-center flex-shrink-0"
-                      style={{ background: t.solidBtn, color: t.solidBtnText, borderRadius: t.btnRadius, boxShadow: `0 4px 14px ${t.accentGlow}` }}
-                    >
-                      <Plus className="w-4 h-4" />
-                    </motion.button>
-                  </div>
+                  {themeId === "corporate" ? (
+                    /* Corporate: dönüşüm odaklı sabit tam-genişlik sepet butonu */
+                    <div className="mt-auto pt-2 space-y-2">
+                      <p className="text-[15px] font-bold" style={{ color: t.priceColor, fontFamily: t.fontFamily }}>
+                        {fmtPrice(p.price ?? 0)}
+                      </p>
+                      <motion.button
+                        whileTap={{ scale: 0.97 }}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleAdd(p); }}
+                        className="w-full py-2.5 text-xs font-bold flex items-center justify-center gap-1.5"
+                        style={{ background: t.solidBtn, color: t.solidBtnText, borderRadius: 8 }}
+                      >
+                        <ShoppingBag className="w-3.5 h-3.5" /> Sepete Ekle
+                      </motion.button>
+                    </div>
+                  ) : (
+                    <div className={`mt-auto flex items-center gap-2 pt-2 ${themeId === "luxury" ? "justify-center" : "justify-between"}`}>
+                      <p className="text-[15px] font-bold" style={{ color: t.priceColor, fontFamily: t.fontFamily }}>
+                        {fmtPrice(p.price ?? 0)}
+                      </p>
+                      {themeId !== "luxury" && (
+                        <motion.button
+                          whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }}
+                          onClick={(e) => {
+                            // Kart bir <a> — sepete ekleme, detay sayfasına gitmesin
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleAdd(p);
+                          }}
+                          title="Sepete Ekle"
+                          className="w-9 h-9 flex items-center justify-center flex-shrink-0"
+                          style={{ background: t.solidBtn, color: t.solidBtnText, borderRadius: t.btnRadius, boxShadow: `0 4px 14px ${t.accentGlow}` }}
+                        >
+                          <Plus className="w-4 h-4" />
+                        </motion.button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </motion.a>
               );

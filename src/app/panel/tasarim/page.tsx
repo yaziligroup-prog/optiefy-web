@@ -913,11 +913,10 @@ function PreviewStore({ s, store, device }: { s: EditorSettings; store: Store | 
 
   const features = (store?.features ?? []).slice(0, 3);
 
-  // StoreView'deki layout'a özgü hero overlay gradyanları
-  const layoutOverlay =
-    layout === "luxury"  ? "linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.30) 55%, rgba(0,0,0,0.78) 100%)"
-    : layout === "artisan" ? "linear-gradient(150deg, rgba(61,51,38,0.60) 0%, rgba(0,0,0,0.15) 55%, rgba(0,0,0,0.70) 100%)"
-    : "linear-gradient(105deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.45) 48%, rgba(0,0,0,0.08) 100%)";
+  // Hero header mürekkebi — açık zeminli iskeletlerde (corporate/artisan kutu)
+  // beyaz yerine tema metin rengi kullanılır ki nav/marka görünür kalsın
+  const heroInk     = themeId === "corporate" || themeId === "artisan" ? t.titleColor : "#FFFFFF";
+  const heroInkSoft = themeId === "corporate" || themeId === "artisan" ? t.textColor  : "rgba(255,255,255,0.85)";
 
   return (
     <div className="w-full flex flex-col overflow-hidden" style={{ background: t.bgColor, fontFamily: bodyFont }}>
@@ -932,19 +931,38 @@ function PreviewStore({ s, store, device }: { s: EditorSettings; store: Store | 
         </div>
       )}
 
-      {/* ── HERO — StoreView ikizi: full-bleed görsel + transparan header ── */}
+      {/* ── HERO — tema iskeletine göre koşullu mimari (StoreView ikizi) ── */}
       <div className="relative w-full overflow-hidden" style={{ height: 440 }}>
 
-        <div className="absolute inset-0" style={{ background: t.galleryBg }} />
-        {heroImage && (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img src={heroImage} alt={heroTitle} className="absolute inset-0 w-full h-full object-cover object-center" />
-        )}
-
-        {/* Layout'a özgü gradyan + kullanıcı tanımlı ek karartma */}
-        <div className="absolute inset-0" style={{ background: layoutOverlay }} />
-        {s.heroOverlay > 0 && (
-          <div className="absolute inset-0" style={{ background: "#000000", opacity: Math.min(s.heroOverlay, 90) / 100 }} />
+        {/* Zemin + görsel katmanları — tema başına farklı iskelet */}
+        {themeId === "modern" ? (
+          /* CyberTech: dikey split zemin */
+          <div className="absolute inset-0 flex">
+            <div className="flex-1" style={{ background: "#0A0A0A" }} />
+            <div className="flex-1" style={{ background: t.galleryBg }} />
+          </div>
+        ) : themeId === "dynamic" ? (
+          /* Bold Dynamic: diyagonal gradyan */
+          <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${primary} 0%, #14000A 62%, #0A0A0A 100%)` }} />
+        ) : themeId === "corporate" ? (
+          /* Clean Corporate: açık kurumsal zemin */
+          <div className="absolute inset-0" style={{ background: t.cardBg, borderBottom: `1px solid ${t.borderColor}` }} />
+        ) : themeId === "artisan" ? (
+          /* Artisan: sayfa zemini — banner kutusu içerikte */
+          <div className="absolute inset-0" style={{ background: t.bgColor }} />
+        ) : (
+          /* Luxury: tam ekran immersive görsel */
+          <>
+            <div className="absolute inset-0" style={{ background: t.galleryBg }} />
+            {heroImage && (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={heroImage} alt={heroTitle} className="absolute inset-0 w-full h-full object-cover object-center" />
+            )}
+            <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.30) 55%, rgba(0,0,0,0.78) 100%)" }} />
+            {s.heroOverlay > 0 && (
+              <div className="absolute inset-0" style={{ background: "#000000", opacity: Math.min(s.heroOverlay, 90) / 100 }} />
+            )}
+          </>
         )}
 
         {/* Transparan header — ayrışmış flex grupları, çakışmasız yerleşim */}
@@ -956,7 +974,7 @@ function PreviewStore({ s, store, device }: { s: EditorSettings; store: Store | 
               <img src={s.logoUrl} alt={brand} className="h-6 w-auto object-contain mr-3 flex-shrink-0" />
             ) : s.storeName.trim() ? (
               <span className="text-xs font-black tracking-[0.3em] uppercase truncate max-w-[40%] mr-3 flex-shrink-0"
-                style={{ color: "#FFFFFF", fontFamily: headingFont }}>
+                style={{ color: heroInk, fontFamily: headingFont }}>
                 {s.storeName.trim()}
               </span>
             ) : null
@@ -965,7 +983,7 @@ function PreviewStore({ s, store, device }: { s: EditorSettings; store: Store | 
             <nav className={`flex items-center gap-2.5 xl:gap-4 flex-1 min-w-0 ${s.headerLayout === "left" ? "justify-end" : ""}`}>
               {s.navLinks.slice(0, 6).map((item) => (
                 <span key={item.id} className="relative group flex items-center gap-0.5 text-[10px] font-medium tracking-wide cursor-default"
-                  style={{ color: "rgba(255,255,255,0.85)" }}>
+                  style={{ color: heroInkSoft }}>
                   <span className="truncate max-w-[58px] xl:max-w-[80px]">{item.label}</span>
                   {item.children && item.children.length > 0 && (
                     <>
@@ -1007,7 +1025,7 @@ function PreviewStore({ s, store, device }: { s: EditorSettings; store: Store | 
               <img src={s.logoUrl} alt={brand} className="h-6 w-auto object-contain mx-2 flex-shrink-0" />
             ) : s.storeName.trim() ? (
               <span className="text-xs font-black tracking-[0.3em] uppercase truncate max-w-[40%] mx-2 flex-shrink-0"
-                style={{ color: "#FFFFFF", fontFamily: headingFont }}>
+                style={{ color: heroInk, fontFamily: headingFont }}>
                 {s.storeName.trim()}
               </span>
             ) : null
@@ -1016,12 +1034,12 @@ function PreviewStore({ s, store, device }: { s: EditorSettings; store: Store | 
             {/* Para birimi seçici */}
             {s.showCurrencySelector && (
               <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md flex items-center gap-0.5"
-                style={{ color: "#FFFFFF", border: "1px solid rgba(255,255,255,0.35)" }}>
+                style={{ color: heroInk, border: `1px solid ${themeId === "corporate" || themeId === "artisan" ? t.borderColor : "rgba(255,255,255,0.35)"}` }}>
                 {store?.currency ?? "TRY"} <ChevronDown className="w-2.5 h-2.5" />
               </span>
             )}
             <div className="relative">
-              <ShoppingBag className="w-4 h-4" style={{ color: "#FFFFFF" }} />
+              <ShoppingBag className="w-4 h-4" style={{ color: heroInk }} />
               <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full text-[8px] font-extrabold flex items-center justify-center"
                 style={{ background: primary, color: btnText }}>
                 2
@@ -1030,35 +1048,147 @@ function PreviewStore({ s, store, device }: { s: EditorSettings; store: Store | 
           </div>
         </div>
 
-        {/* Alt-orta caption — luxury hizalaması (vivinth görünümü) */}
-        <div className="absolute inset-x-0 bottom-0 px-8 pb-9 flex flex-col items-center text-center z-10">
-          <p className="text-[8px] font-bold tracking-[0.35em] uppercase mb-3" style={{ color: "rgba(255,255,255,0.65)" }}>
-            {brand} · El Yapımı Koleksiyon
-          </p>
-          <h2
-            className="leading-[1.05] tracking-tight mb-3 max-w-lg"
-            style={{
-              color: "#FFFFFF", fontFamily: headingFont,
-              fontSize: "clamp(1.5rem, 3.2vw, 2.5rem)",
-              fontWeight: layout === "luxury" ? 400 : layout === "artisan" ? 600 : 800,
-            }}
-          >
-            {heroTitle}
-          </h2>
-          <p className="text-[11px] leading-relaxed mb-5 max-w-sm mx-auto" style={{ color: "rgba(255,255,255,0.75)" }}>
-            {heroSubtitle}
-          </p>
-          <span
-            className="inline-flex items-center gap-2 px-6 py-2.5 text-[11px] font-bold tracking-wide"
-            style={{
-              background: "rgba(255,255,255,0.14)", color: "#FFFFFF",
-              border: "1.5px solid rgba(255,255,255,0.45)",
-              borderRadius: radius, backdropFilter: "blur(12px)",
-            }}
-          >
-            Koleksiyonu Keşfet <ArrowRight className="w-3 h-3" />
-          </span>
-        </div>
+        {/* ── İçerik varyantları — tema iskeletine göre ── */}
+        {themeId === "modern" ? (
+          /* CyberTech: split-screen — sol brütalist metin, sağ keskin çerçeveli görsel */
+          <div className="absolute inset-0 pt-14 flex">
+            <div className="flex-1 flex flex-col justify-center px-6">
+              <p className="text-[8px] font-bold tracking-[0.35em] uppercase mb-2.5" style={{ color: primary }}>
+                {brand} · Koleksiyon
+              </p>
+              <h2 className="uppercase leading-[0.98] tracking-tight mb-2.5 line-clamp-3"
+                style={{ color: "#FFFFFF", fontFamily: headingFont, fontSize: "clamp(1.2rem, 2.4vw, 1.8rem)", fontWeight: 800 }}>
+                {heroTitle}
+              </h2>
+              <p className="text-[10px] leading-relaxed mb-4 line-clamp-2" style={{ color: "rgba(255,255,255,0.6)" }}>
+                {heroSubtitle}
+              </p>
+              <span className="inline-flex w-fit items-center gap-1.5 px-4 py-2 text-[10px] font-bold"
+                style={{ background: primary, color: btnText, borderRadius: 0, boxShadow: `0 6px 18px ${primary}45` }}>
+                Ürünü İncele <ArrowRight className="w-2.5 h-2.5" />
+              </span>
+            </div>
+            <div className="flex-1 flex items-center justify-center p-5">
+              <div className="relative w-full max-w-[190px] overflow-hidden" style={{ aspectRatio: "1/1", border: `2px solid ${primary}` }}>
+                {heroImage ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={heroImage} alt={heroTitle} className="absolute inset-0 w-full h-full object-cover" />
+                ) : (
+                  <div className="absolute inset-0" style={{ background: t.galleryBg }} />
+                )}
+              </div>
+            </div>
+          </div>
+        ) : themeId === "artisan" ? (
+          /* Artisan: asılı rounded-2xl banner kutusu */
+          <div className="absolute inset-x-4 top-16 bottom-4 rounded-2xl overflow-hidden" style={{ background: t.galleryBg }}>
+            {heroImage && (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={heroImage} alt={heroTitle} className="absolute inset-0 w-full h-full object-cover" />
+            )}
+            <div className="absolute inset-0" style={{ background: "linear-gradient(150deg, rgba(61,51,38,0.60) 0%, rgba(0,0,0,0.15) 55%, rgba(0,0,0,0.70) 100%)" }} />
+            {s.heroOverlay > 0 && (
+              <div className="absolute inset-0" style={{ background: "#000000", opacity: Math.min(s.heroOverlay, 90) / 100 }} />
+            )}
+            <div className="absolute inset-x-0 bottom-0 px-6 pb-6">
+              <p className="text-[8px] font-bold tracking-[0.35em] uppercase mb-2" style={{ color: "rgba(255,229,190,0.85)" }}>
+                {brand} · Zanaat Koleksiyonu
+              </p>
+              <h2 className="leading-[1.05] tracking-tight mb-2 max-w-md line-clamp-2"
+                style={{ color: "#FFFFFF", fontFamily: headingFont, fontSize: "clamp(1.3rem, 2.6vw, 2rem)", fontWeight: 600 }}>
+                {heroTitle}
+              </h2>
+              <span className="inline-flex items-center gap-1.5 px-4 py-2 text-[10px] font-bold"
+                style={{ background: primary, color: btnText, borderRadius: radius, boxShadow: `0 6px 18px ${primary}45` }}>
+                Ürünü İncele <ArrowRight className="w-2.5 h-2.5" />
+              </span>
+            </div>
+          </div>
+        ) : themeId === "dynamic" ? (
+          /* Bold Dynamic: dev italik tipografi + açılı görsel kartı */
+          <div className="absolute inset-0 pt-14 px-6 flex items-center gap-5">
+            <div className="flex-1 min-w-0">
+              <p className="text-[8px] font-black tracking-[0.3em] uppercase mb-2.5 px-1.5 py-0.5 w-fit"
+                style={{ background: "#D4FF00", color: "#0A0A0A", border: "1.5px solid #0A0A0A" }}>
+                {brand} · Yeni Sezon
+              </p>
+              <h2 className="italic uppercase leading-[0.92] tracking-tighter mb-3 line-clamp-3"
+                style={{ color: "#FFFFFF", fontFamily: headingFont, fontSize: "clamp(1.6rem, 3.4vw, 2.6rem)", fontWeight: 800 }}>
+                {heroTitle}
+              </h2>
+              <span className="inline-flex items-center gap-1.5 px-4 py-2 text-[10px] font-black uppercase tracking-wider"
+                style={{ background: "#D4FF00", color: "#0A0A0A", borderRadius: radius, boxShadow: "0 8px 22px rgba(212,255,0,0.35)" }}>
+                Hemen Keşfet <ArrowRight className="w-2.5 h-2.5" />
+              </span>
+            </div>
+            {!isMobile && (
+              <div className="relative w-[150px] flex-shrink-0 overflow-hidden"
+                style={{ aspectRatio: "4/5", borderRadius: 6, border: "2.5px solid #0A0A0A", boxShadow: "8px 8px 0 #0A0A0A", transform: "rotate(3deg)" }}>
+                {heroImage ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={heroImage} alt={heroTitle} className="absolute inset-0 w-full h-full object-cover" />
+                ) : (
+                  <div className="absolute inset-0" style={{ background: t.galleryBg }} />
+                )}
+              </div>
+            )}
+          </div>
+        ) : themeId === "corporate" ? (
+          /* Clean Corporate: klasik iki kolonlu güven veren kutu */
+          <div className={`absolute inset-0 pt-14 px-6 grid items-center gap-5 ${isMobile ? "grid-cols-1" : "grid-cols-2"}`}>
+            <div>
+              <p className="text-[8px] font-bold tracking-[0.3em] uppercase mb-2.5" style={{ color: primary }}>
+                {brand} · El Yapımı Koleksiyon
+              </p>
+              <h2 className="leading-[1.08] tracking-tight mb-2.5 line-clamp-3"
+                style={{ color: t.titleColor, fontFamily: headingFont, fontSize: "clamp(1.3rem, 2.8vw, 2rem)", fontWeight: 700 }}>
+                {heroTitle}
+              </h2>
+              <p className="text-[10px] leading-relaxed mb-4 line-clamp-2" style={{ color: t.textColor }}>
+                {heroSubtitle}
+              </p>
+              <span className="inline-flex items-center gap-1.5 px-4 py-2 text-[10px] font-bold"
+                style={{ background: primary, color: btnText, borderRadius: 8, boxShadow: `0 5px 16px ${primary}40` }}>
+                Ürünü İncele <ArrowRight className="w-2.5 h-2.5" />
+              </span>
+            </div>
+            {!isMobile && (
+              <div className="relative w-full overflow-hidden rounded-xl"
+                style={{ aspectRatio: "4/3", background: t.galleryBg, boxShadow: "0 16px 40px rgba(15,44,92,0.16)" }}>
+                {heroImage && (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={heroImage} alt={heroTitle} className="absolute inset-0 w-full h-full object-cover" />
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Luxury: alt-orta zarif caption + hayalet pill CTA */
+          <div className="absolute inset-x-0 bottom-0 px-8 pb-9 flex flex-col items-center text-center z-10">
+            <p className="text-[8px] font-bold tracking-[0.35em] uppercase mb-3" style={{ color: "rgba(255,255,255,0.65)" }}>
+              {brand} · El Yapımı Koleksiyon
+            </p>
+            <h2
+              className="leading-[1.05] tracking-tight mb-3 max-w-lg"
+              style={{ color: "#FFFFFF", fontFamily: headingFont, fontSize: "clamp(1.5rem, 3.2vw, 2.5rem)", fontWeight: 300 }}
+            >
+              {heroTitle}
+            </h2>
+            <p className="text-[11px] leading-relaxed mb-5 max-w-sm mx-auto" style={{ color: "rgba(255,255,255,0.75)" }}>
+              {heroSubtitle}
+            </p>
+            <span
+              className="inline-flex items-center gap-2 px-6 py-2.5 text-[11px] font-bold tracking-wide"
+              style={{
+                background: "rgba(255,255,255,0.14)", color: "#FFFFFF",
+                border: "1.5px solid rgba(255,255,255,0.45)",
+                borderRadius: 9999, backdropFilter: "blur(12px)",
+              }}
+            >
+              Koleksiyonu Keşfet <ArrowRight className="w-3 h-3" />
+            </span>
+          </div>
+        )}
       </div>
 
       {/* ── SATIN ALMA BÖLÜMÜ — gerçek ürün verisiyle ── */}

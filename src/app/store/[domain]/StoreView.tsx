@@ -502,8 +502,14 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
   const heroTitle    = fp ? productName : (ts?.hero_title?.trim() || productName);
   const heroSubtitle = fp ? (description || SLOGAN) : (ts?.hero_subtitle?.trim() || description || SLOGAN);
 
-  // Header icon color — white over full-bleed hero image, themed once scrolled
-  const headerIconColor = scrolled ? t.titleColor : "#FFFFFF";
+  // ── Tema iskeleti ───────────────────────────────────────────────────────────
+  // Yalnızca luxury tam ekran görsel üzerine transparan header kullanır;
+  // diğer tema mimarilerinde header her zaman solid renkte kalır.
+  const immersiveHero = themeId === "luxury";
+  const headerSolid   = scrolled || !immersiveHero;
+
+  // Header icon color — white over full-bleed hero image, themed once solid
+  const headerIconColor = headerSolid ? t.titleColor : "#FFFFFF";
 
   // ── Header coğrafyası ───────────────────────────────────────────────────────
   // header_layout: "center" → nav solda, marka ortada, ikonlar sağda (3 bölge)
@@ -573,10 +579,10 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
         style={{
           top:                 announceH,
           height:              scrolled ? 64 : 84,
-          background:          scrolled ? `${t.headerBg}f2` : "transparent",
-          backdropFilter:      scrolled ? "blur(20px)" : "none",
-          WebkitBackdropFilter: scrolled ? "blur(20px)" : "none",
-          borderBottom:        scrolled ? `1px solid ${t.borderColor}` : "1px solid transparent",
+          background:          headerSolid ? `${t.headerBg}f2` : "transparent",
+          backdropFilter:      headerSolid ? "blur(20px)" : "none",
+          WebkitBackdropFilter: headerSolid ? "blur(20px)" : "none",
+          borderBottom:        headerSolid ? `1px solid ${t.borderColor}` : "1px solid transparent",
         }}
       >
         <button onClick={() => setMenuOpen(true)} className="md:hidden -ml-1.5 p-1.5">
@@ -605,7 +611,7 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
                     if (hasChildren) { e.preventDefault(); setOpenNav(isOpen ? null : label); }
                   }}
                   className="flex items-center gap-1 text-[13px] font-medium tracking-wide transition-opacity hover:opacity-50 whitespace-nowrap"
-                  style={{ color: scrolled ? t.textColor : "rgba(255,255,255,0.85)" }}
+                  style={{ color: headerSolid ? t.textColor : "rgba(255,255,255,0.85)" }}
                 >
                   <span className="truncate max-w-[104px] xl:max-w-[150px]">{label}</span>
                   {hasChildren && (
@@ -671,7 +677,7 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
               onChange={(e) => setDisplayCurrency(e.target.value)}
               aria-label="Para birimi"
               className="bg-transparent text-xs font-semibold cursor-pointer outline-none appearance-none text-center"
-              style={{ color: headerIconColor, border: `1px solid ${scrolled ? t.borderColor : "rgba(255,255,255,0.35)"}`, borderRadius: 8, padding: "3px 8px" }}
+              style={{ color: headerIconColor, border: `1px solid ${headerSolid ? t.borderColor : "rgba(255,255,255,0.35)"}`, borderRadius: 8, padding: "3px 8px" }}
             >
               {["TRY", "USD", "AUD"].map((cur) => (
                 <option key={cur} value={cur} style={{ color: "#111" }}>{cur}</option>
@@ -752,96 +758,190 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
         )}
       </AnimatePresence>
 
-      {/* ════ HERO — full-bleed object-cover image, layout-specific caption ════ */}
-      <section className="relative w-full overflow-hidden" style={{ minHeight: "100vh" }}>
+      {/* ════ HERO — tema iskeletine göre KOŞULLU MİMARİ ════
+          luxury: tam ekran immersive · modern: split-screen · artisan: asılı banner
+          dynamic: diyagonal gradyan · corporate: klasik iki kolonlu kutu */}
+      {themeId === "modern" ? (
 
-        {/* Background — always object-cover; shows themed gradient while loading or on error */}
-        <div className="absolute inset-0" style={{ background: t.galleryBg }} />
-        {heroImage && (
-          <FadeImage
-            src={heroImage}
-            alt={productName}
-            className="absolute inset-0 w-full h-full object-cover"
-            style={{ objectPosition: "center" }}
-          />
-        )}
+        /* ── CYBERTECH: dikey bölünmüş split-screen, keskin köşeler ── */
+        <section className="flex flex-col md:flex-row" style={{ minHeight: "80vh", paddingTop: announceH + 76, background: t.bgColor }}>
+          {/* Sol: koyu zemin, sola dayalı brütalist tipografi */}
+          <div className="flex-1 flex flex-col justify-center px-8 md:px-14 py-14" style={{ background: "#0A0A0A" }}>
+            <motion.div initial={{ opacity: 0, x: -24 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}>
+              <p className="text-[11px] font-bold tracking-[0.35em] uppercase mb-6" style={{ color: t.accentColor }}>
+                {brand} · El Yapımı Koleksiyon
+              </p>
+              <h2 className="uppercase leading-[0.98] tracking-tight mb-6"
+                style={{ color: "#FFFFFF", fontFamily: titleFont, fontSize: "clamp(2.4rem, 5.5vw, 4.4rem)", fontWeight: 800 }}>
+                {heroTitle}
+              </h2>
+              <p className="text-base leading-relaxed mb-9 max-w-md" style={{ color: "rgba(255,255,255,0.65)", fontFamily: t.fontFamilySans }}>
+                {heroSubtitle}
+              </p>
+              <motion.button whileTap={{ scale: 0.97 }} whileHover={{ gap: "14px" }} onClick={scrollToBuy}
+                className="inline-flex w-fit items-center gap-2.5 px-8 py-4 text-sm font-bold"
+                style={{ background: t.solidBtn, color: t.solidBtnText, borderRadius: t.btnRadius, boxShadow: `0 8px 28px ${t.accentGlow}` }}>
+                Ürünü İncele <ArrowRight className="w-4 h-4" />
+              </motion.button>
+            </motion.div>
+          </div>
+          {/* Sağ: keskin köşeli teknik çerçevede ürün görseli */}
+          <div className="flex-1 flex items-center justify-center p-8 md:p-12" style={{ background: t.galleryBg }}>
+            <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.7, delay: 0.15 }}
+              className="relative w-full max-w-[520px] overflow-hidden"
+              style={{ aspectRatio: "1 / 1", border: `2px solid ${t.accentColor}`, borderRadius: 0 }}>
+              {heroImage
+                ? <FadeImage src={heroImage} alt={heroTitle} className="absolute inset-0 w-full h-full object-cover" fallback={<ImagePlaceholder theme={t} label={productName} tall />} />
+                : <ImagePlaceholder theme={t} label={productName} tall />}
+            </motion.div>
+          </div>
+        </section>
 
-        {/* ── LUXURY: bottom-centered dark overlay ── */}
-        {layout === "luxury" && (
-          <div
-            className="absolute inset-0"
-            style={{ background: "linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.30) 55%, rgba(0,0,0,0.78) 100%)" }}
-          />
-        )}
+      ) : themeId === "artisan" ? (
 
-        {/* ── ARTISAN: warm amber-tinted overlay ── */}
-        {layout === "artisan" && (
-          <div
-            className="absolute inset-0"
-            style={{ background: "linear-gradient(150deg, rgba(61,51,38,0.60) 0%, rgba(0,0,0,0.15) 55%, rgba(0,0,0,0.70) 100%)" }}
-          />
-        )}
+        /* ── ARTISAN: max-w-7xl içinde asılı, yumuşatılmış banner kutusu ── */
+        <section className="max-w-7xl mx-auto px-4 md:px-8" style={{ paddingTop: announceH + 100 }}>
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+            className="relative overflow-hidden rounded-2xl" style={{ minHeight: "66vh", background: t.galleryBg }}>
+            {heroImage && (
+              <FadeImage src={heroImage} alt={heroTitle} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "center" }} />
+            )}
+            <div className="absolute inset-0" style={{ background: "linear-gradient(150deg, rgba(61,51,38,0.60) 0%, rgba(0,0,0,0.15) 55%, rgba(0,0,0,0.70) 100%)" }} />
+            {ts?.hero_overlay != null && ts.hero_overlay > 0 && (
+              <div className="absolute inset-0" style={{ background: "#000000", opacity: Math.min(ts.hero_overlay, 90) / 100 }} />
+            )}
+            <div className="absolute inset-x-0 bottom-0 px-8 md:px-12 pb-12">
+              <p className="text-[11px] font-bold tracking-[0.35em] uppercase mb-4" style={{ color: "rgba(255,229,190,0.85)" }}>
+                {brand} · Zanaat Koleksiyonu
+              </p>
+              <h2 className="leading-[1.05] tracking-tight mb-5" style={{ color: "#FFFFFF", fontFamily: titleFont, fontSize: "clamp(2.2rem, 5vw, 4rem)", fontWeight: 600 }}>
+                {heroTitle}
+              </h2>
+              <p className="text-base md:text-lg leading-relaxed mb-8 max-w-lg" style={{ color: "rgba(255,229,190,0.78)", fontFamily: t.fontFamilySans }}>
+                {heroSubtitle}
+              </p>
+              <motion.button whileHover={{ gap: "14px" }} whileTap={{ scale: 0.97 }} onClick={scrollToBuy}
+                className="inline-flex items-center gap-2.5 px-8 py-4 text-sm font-bold"
+                style={{ background: t.primaryBtn, color: "#FBF7F0", borderRadius: t.btnRadius, boxShadow: `0 8px 28px ${t.accentGlow}` }}>
+                Ürünü İncele <ArrowRight className="w-4 h-4" />
+              </motion.button>
+            </div>
+          </motion.div>
+        </section>
 
-        {/* ── TECH: left-dominant dark overlay ── */}
-        {layout === "tech" && (
-          <div
-            className="absolute inset-0"
-            style={{ background: "linear-gradient(105deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.45) 48%, rgba(0,0,0,0.08) 100%)" }}
-          />
-        )}
+      ) : themeId === "dynamic" ? (
 
-        {/* ── Kullanıcı tanımlı ek karartma — theme_settings.hero_overlay (0–90%) ── */}
-        {ts?.hero_overlay != null && ts.hero_overlay > 0 && (
-          <div
-            className="absolute inset-0"
-            style={{ background: "#000000", opacity: Math.min(ts.hero_overlay, 90) / 100 }}
-          />
-        )}
+        /* ── BOLD DYNAMIC: diyagonal gradyan + dev italik tipografi ── */
+        <section className="relative overflow-hidden flex items-center"
+          style={{ minHeight: "88vh", paddingTop: announceH + 76, background: `linear-gradient(135deg, ${t.accentColor} 0%, #14000A 62%, #0A0A0A 100%)` }}>
+          <div className="max-w-7xl mx-auto px-6 md:px-12 w-full grid grid-cols-1 md:grid-cols-[1.2fr_0.8fr] gap-10 items-center">
+            <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}>
+              <p className="text-xs font-black tracking-[0.3em] uppercase mb-5 px-3 py-1 w-fit"
+                style={{ background: t.badgeBg, color: t.badgeText, border: `2px solid ${t.badgeBorder}` }}>
+                {brand} · Yeni Sezon
+              </p>
+              <h2 className="italic uppercase leading-[0.92] tracking-tighter mb-6 text-6xl md:text-8xl"
+                style={{ color: "#FFFFFF", fontFamily: titleFont, fontWeight: 800 }}>
+                {heroTitle}
+              </h2>
+              <p className="text-base md:text-lg leading-relaxed mb-9 max-w-md" style={{ color: "rgba(255,255,255,0.75)", fontFamily: t.fontFamilySans }}>
+                {heroSubtitle}
+              </p>
+              <motion.button whileHover={{ x: 4 }} whileTap={{ scale: 0.96 }} onClick={scrollToBuy}
+                className="inline-flex items-center gap-2.5 px-9 py-4 text-sm font-black uppercase tracking-wider"
+                style={{ background: "#D4FF00", color: "#0A0A0A", borderRadius: t.btnRadius, boxShadow: "0 10px 32px rgba(212,255,0,0.35)" }}>
+                Hemen Keşfet <ArrowRight className="w-4 h-4" />
+              </motion.button>
+            </motion.div>
+            {/* Açılı, enerjik görsel kartı */}
+            <motion.div
+              initial={{ opacity: 0, rotate: 6, y: 30 }} animate={{ opacity: 1, rotate: 3, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              className="relative hidden md:block overflow-hidden"
+              style={{ aspectRatio: "4 / 5", borderRadius: 8, border: "3px solid #0A0A0A", boxShadow: "12px 12px 0 #0A0A0A" }}>
+              {heroImage
+                ? <FadeImage src={heroImage} alt={heroTitle} className="absolute inset-0 w-full h-full object-cover" fallback={<ImagePlaceholder theme={t} label={productName} tall />} />
+                : <ImagePlaceholder theme={t} label={productName} tall />}
+            </motion.div>
+          </div>
+        </section>
 
-        {/* Caption — anchored to bottom, layout-specific alignment */}
-        <div
-          className={`absolute inset-x-0 bottom-0 px-8 md:px-16 pb-20 md:pb-28 ${layout === "luxury" ? "flex flex-col items-center text-center" : ""}`}
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
-            className={layout === "luxury" ? "max-w-2xl w-full" : "max-w-2xl"}
-          >
-            {/* Eyebrow */}
-            <p
-              className="text-[11px] font-bold tracking-[0.35em] uppercase mb-5"
-              style={{ color: layout === "luxury" ? "rgba(255,255,255,0.65)" : layout === "artisan" ? "rgba(255,229,190,0.85)" : t.accentColor }}
+      ) : themeId === "corporate" ? (
+
+        /* ── CLEAN CORPORATE: klasik, güven veren iki kolonlu kutu düzeni ── */
+        <section style={{ paddingTop: announceH + 84, background: t.cardBg, borderBottom: `1px solid ${t.borderColor}` }}>
+          <div className="max-w-7xl mx-auto px-6 md:px-10 py-14 md:py-20 grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-16 items-center">
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
+              <p className="text-[11px] font-bold tracking-[0.3em] uppercase mb-4" style={{ color: t.accentColor }}>
+                {brand} · El Yapımı Koleksiyon
+              </p>
+              <h2 className="leading-[1.08] tracking-tight mb-5" style={{ color: t.titleColor, fontFamily: titleFont, fontSize: "clamp(2.2rem, 4.5vw, 3.6rem)", fontWeight: 700 }}>
+                {heroTitle}
+              </h2>
+              <p className="text-base md:text-lg leading-relaxed mb-8 max-w-lg" style={{ color: t.textColor, fontFamily: t.fontFamilySans }}>
+                {heroSubtitle}
+              </p>
+              <div className="flex items-center gap-3 flex-wrap">
+                <motion.button whileHover={{ opacity: 0.9 }} whileTap={{ scale: 0.97 }} onClick={scrollToBuy}
+                  className="inline-flex items-center gap-2.5 px-8 py-4 text-sm font-bold"
+                  style={{ background: t.solidBtn, color: t.solidBtnText, borderRadius: 8, boxShadow: `0 6px 20px ${t.accentGlow}` }}>
+                  Ürünü İncele <ArrowRight className="w-4 h-4" />
+                </motion.button>
+                <button onClick={scrollToBuy}
+                  className="inline-flex items-center gap-2 px-6 py-4 text-sm font-semibold"
+                  style={{ color: t.accentColor, border: `1.5px solid ${t.accentColor}`, borderRadius: 8 }}>
+                  Detayları Gör
+                </button>
+              </div>
+            </motion.div>
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.12 }}
+              className="relative overflow-hidden rounded-xl"
+              style={{ aspectRatio: "4 / 3", background: t.galleryBg, boxShadow: "0 24px 60px rgba(15,44,92,0.16)" }}>
+              {heroImage
+                ? <FadeImage src={heroImage} alt={heroTitle} className="absolute inset-0 w-full h-full object-cover" fallback={<ImagePlaceholder theme={t} label={productName} tall />} />
+                : <ImagePlaceholder theme={t} label={productName} tall />}
+            </motion.div>
+          </div>
+        </section>
+
+      ) : (
+
+        /* ── LUXURY: tam ekran immersive hero — zarif & minimal ── */
+        <section className="relative w-full overflow-hidden" style={{ minHeight: "100vh" }}>
+          <div className="absolute inset-0" style={{ background: t.galleryBg }} />
+          {heroImage && (
+            <FadeImage
+              src={heroImage}
+              alt={productName}
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{ objectPosition: "center" }}
+            />
+          )}
+          <div className="absolute inset-0"
+            style={{ background: "linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.30) 55%, rgba(0,0,0,0.78) 100%)" }} />
+          {ts?.hero_overlay != null && ts.hero_overlay > 0 && (
+            <div className="absolute inset-0" style={{ background: "#000000", opacity: Math.min(ts.hero_overlay, 90) / 100 }} />
+          )}
+          <div className="absolute inset-x-0 bottom-0 px-8 md:px-16 pb-20 md:pb-28 flex flex-col items-center text-center">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
+              className="max-w-2xl w-full"
             >
-              {brand} · {layout === "artisan" ? "Zanaat Koleksiyonu" : "El Yapımı Koleksiyon"}
-            </p>
-
-            {/* Main title */}
-            <h2
-              className="leading-[1.02] tracking-tight mb-6"
-              style={{
-                color:      "#FFFFFF",
-                fontFamily: titleFont,
-                fontSize:   heroSize,
-                fontWeight: layout === "luxury" ? 400 : layout === "artisan" ? 600 : 800,
-              }}
-            >
-              {heroTitle}
-            </h2>
-
-            {/* Description from AI — fallback to static slogan */}
-            <p
-              className={`text-base md:text-lg leading-relaxed mb-9 ${layout === "luxury" ? "mx-auto max-w-md" : "max-w-lg"}`}
-              style={{
-                color:      layout === "artisan" ? "rgba(255,229,190,0.78)" : "rgba(255,255,255,0.75)",
-                fontFamily: t.fontFamilySans,
-              }}
-            >
-              {heroSubtitle}
-            </p>
-
-            {/* CTA button — style varies by layout */}
-            {layout === "luxury" ? (
+              <p className="text-[11px] font-bold tracking-[0.35em] uppercase mb-5" style={{ color: "rgba(255,255,255,0.65)" }}>
+                {brand} · El Yapımı Koleksiyon
+              </p>
+              {/* İnce (font-light) serif başlık — lüks hissiyat */}
+              <h2 className="leading-[1.02] tracking-tight mb-6"
+                style={{ color: "#FFFFFF", fontFamily: titleFont, fontSize: heroSize, fontWeight: 300 }}>
+                {heroTitle}
+              </h2>
+              <p className="text-base md:text-lg leading-relaxed mb-9 mx-auto max-w-md"
+                style={{ color: "rgba(255,255,255,0.75)", fontFamily: t.fontFamilySans }}>
+                {heroSubtitle}
+              </p>
+              {/* Tam oval, şeffaf-hayalet CTA */}
               <motion.button
                 whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
                 onClick={scrollToBuy}
@@ -856,24 +956,10 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
               >
                 Koleksiyonu Keşfet <ArrowRight className="w-4 h-4" />
               </motion.button>
-            ) : (
-              <motion.button
-                whileHover={{ gap: "14px" }} whileTap={{ scale: 0.97 }}
-                onClick={scrollToBuy}
-                className="inline-flex items-center gap-2.5 px-8 py-4 text-sm font-bold"
-                style={{
-                  background:   layout === "artisan" ? t.primaryBtn : t.solidBtn,
-                  color:        layout === "artisan" ? "#FBF7F0" : t.solidBtnText,
-                  borderRadius: t.btnRadius,
-                  boxShadow:    `0 8px 28px ${t.accentGlow}`,
-                }}
-              >
-                Ürünü İncele <ArrowRight className="w-4 h-4" />
-              </motion.button>
-            )}
-          </motion.div>
-        </div>
-      </section>
+            </motion.div>
+          </div>
+        </section>
+      )}
 
       {/* ════ BUY SECTION ════ */}
       {layout === "artisan" ? (

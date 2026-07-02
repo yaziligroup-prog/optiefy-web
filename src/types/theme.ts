@@ -114,7 +114,7 @@ export const THEMES: Record<ThemeId, ThemeConfig> = {
   // ═══ TEMA 2 — Minimalist Tech (Apple) ═══════════════════════════════════════
   modern: {
     id: "modern",
-    name: "Minimalist Tech",
+    name: "CyberTech",
     shortName: "Tech",
     bgColor: "#FFFFFF",
     headerBg: "#FFFFFF",
@@ -143,7 +143,7 @@ export const THEMES: Record<ThemeId, ThemeConfig> = {
     badgeBg: "rgba(0,113,227,0.10)",
     badgeText: "#0071E3",
     badgeBorder: "rgba(0,113,227,0.30)",
-    btnRadius: "9999px",
+    btnRadius: "0px", // CyberTech: tamamen keskin köşeler
     ghostBorder: "#D2D2D7",
     ghostBorderWidth: "1px",
     ghostText: "#1D1D1F",
@@ -204,7 +204,7 @@ export const THEMES: Record<ThemeId, ThemeConfig> = {
   // ═══ TEMA 4 — Dinamik (Street / GenZ) ═══════════════════════════════════════
   dynamic: {
     id: "dynamic",
-    name: "Dinamik",
+    name: "Bold Dynamic",
     shortName: "Dinamik",
     bgColor: "#FFFFFF",
     headerBg: "#FFFFFF",
@@ -249,7 +249,7 @@ export const THEMES: Record<ThemeId, ThemeConfig> = {
   // ═══ TEMA 5 — Klasik Kurumsal (Güven) ═══════════════════════════════════════
   corporate: {
     id: "corporate",
-    name: "Klasik Kurumsal",
+    name: "Clean Corporate",
     shortName: "Kurumsal",
     bgColor: "#FFFFFF",
     headerBg: "#FFFFFF",
