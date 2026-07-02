@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { Suspense, useState, useEffect, useRef, useTransition } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Toaster, toast } from "sonner";
 import { createClient } from "@/utils/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { motion, AnimatePresence } from "framer-motion";
@@ -731,12 +732,44 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
+// ─── E-posta doğrulama toast'ı ───────────────────────────────────────────────
+// Auth callback, doğrulanan kullanıcıyı ?verified=1 ile panele yönlendirir.
+
+function VerifiedToastListener() {
+  const searchParams = useSearchParams();
+  const pathname     = usePathname();
+  const router       = useRouter();
+  const fired        = useRef(false);
+
+  useEffect(() => {
+    if (fired.current || searchParams.get("verified") !== "1") return;
+    fired.current = true;
+    toast.success("Hesabınız başarıyla onaylandı! Hoş geldiniz 🎉", { duration: 6000 });
+    const params = new URLSearchParams(searchParams);
+    params.delete("verified");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [searchParams, pathname, router]);
+
+  return null;
+}
+
+// Panel genelinde tek sonner Toaster — tema paletiyle senkron
+function PanelToaster() {
+  const { isDark } = usePanelTheme();
+  return <Toaster position="top-center" richColors closeButton theme={isDark ? "dark" : "light"} />;
+}
+
 // ─── Root layout export ──────────────────────────────────────────────────────
 
 export default function PanelLayout({ children }: { children: React.ReactNode }) {
   return (
     <PanelThemeProvider>
       <StoreProvider>
+        <PanelToaster />
+        <Suspense fallback={null}>
+          <VerifiedToastListener />
+        </Suspense>
         <Shell>{children}</Shell>
       </StoreProvider>
     </PanelThemeProvider>

@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import {
   Sparkles, Mail, Lock, Eye, EyeOff, ArrowRight,
-  AlertCircle, CheckCircle,
+  AlertCircle, CheckCircle, MailCheck, RefreshCw, ArrowLeft,
 } from "lucide-react";
 import OptiefyIcon from "@/components/OptiefyIcon";
 import { createClient } from "@/utils/supabase/client";
@@ -85,9 +85,25 @@ function LoginContent() {
   const [loading, setLoading]   = useState(false);
   const [oauthLoading, setOauthLoading] = useState<"google" | "apple" | null>(null);
   const [error, setError]       = useState<string | null>(
-    errorParam === "auth_failed" ? "Kimlik doğrulama başarısız. Lütfen tekrar deneyin." : null
+    errorParam === "auth_failed"
+      ? "Kimlik doğrulama başarısız. Lütfen tekrar deneyin."
+      : errorParam === "verify_failed"
+      ? "Doğrulama bağlantısı geçersiz veya süresi dolmuş. Giriş yapmayı deneyin ya da yeniden kayıt olup yeni bağlantı isteyin."
+      : null
   );
   const [success, setSuccess]   = useState<string | null>(null);
+
+  // Onay kodu bekleme ekranı — kayıt başarılı olunca dolu
+  const [pendingEmail,   setPendingEmail]   = useState<string | null>(null);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resending,      setResending]      = useState(false);
+  const [resendState,    setResendState]    = useState<"idle" | "sent" | "error">("idle");
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setInterval(() => setResendCooldown((s) => s - 1), 1000);
+    return () => clearInterval(t);
+  }, [resendCooldown]);
 
   const [supabase] = useState(() => createClient());
 
@@ -159,11 +175,14 @@ function LoginContent() {
       }
       router.push(afterAuthUrl);
     } else {
-      const { error: err } = await supabase.auth.signUp({
+      // Onay kodlu üyelik: Confirm Email aktif → signUp oturum AÇMAZ,
+      // kullanıcı e-postasındaki aktivasyon linkiyle doğrulanır.
+      const { data, error: err } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(afterAuthUrl)}`,
+          emailRedirectTo:
+            `${window.location.origin}/auth/callback?type=signup&next=${encodeURIComponent(afterAuthUrl)}`,
           data: storeName ? { store_name: storeName } : undefined,
         },
       });
@@ -172,9 +191,50 @@ function LoginContent() {
         setLoading(false);
         return;
       }
-      setSuccess("Hesabınız oluşturuldu! E-postanıza gelen doğrulama linkine tıklayın.");
+      // Zaten kayıtlı e-posta: Supabase güvenlik gereği hata dönmez,
+      // identities boş bir user döner
+      if (data.user && data.user.identities?.length === 0) {
+        setError("Bu e-posta adresi zaten kayıtlı. Giriş yapmayı deneyin.");
+        setLoading(false);
+        return;
+      }
+      // Confirm Email kapalıysa oturum döner — direkt içeri al
+      if (data.session) {
+        router.push(afterAuthUrl);
+        return;
+      }
+      // "Onay Bekleniyor" ekranına geç
+      setPendingEmail(email);
+      setPassword("");
+      setConfirmPw("");
+      setResendCooldown(60);
+      setResendState("idle");
       setLoading(false);
     }
+  };
+
+  const handleResend = async () => {
+    if (!pendingEmail || resendCooldown > 0 || resending) return;
+    setResending(true);
+    const { error: err } = await supabase.auth.resend({
+      type: "signup",
+      email: pendingEmail,
+      options: {
+        emailRedirectTo:
+          `${window.location.origin}/auth/callback?type=signup&next=${encodeURIComponent(afterAuthUrl)}`,
+      },
+    });
+    setResending(false);
+    setResendState(err ? "error" : "sent");
+    if (!err) setResendCooldown(60);
+  };
+
+  const backToLogin = () => {
+    setPendingEmail(null);
+    setTab("login");
+    setError(null);
+    setSuccess(null);
+    setResendState("idle");
   };
 
   const switchTab = (t: "login" | "register") => {
@@ -234,6 +294,27 @@ function LoginContent() {
               : "0 2px 40px rgba(0,0,0,0.06)",
           }}
         >
+          <AnimatePresence mode="wait">
+          {pendingEmail ? (
+            <VerifyEmailScreen
+              key="verify"
+              email={pendingEmail}
+              c={c} isDark={isDark}
+              displayFont={displayFont} bodyFont={bodyFont}
+              resendCooldown={resendCooldown}
+              resending={resending}
+              resendState={resendState}
+              onResend={handleResend}
+              onBack={backToLogin}
+            />
+          ) : (
+          <motion.div
+            key="auth-form"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.22 }}
+          >
           {/* Heading */}
           <div className="mb-7">
             {storeName && (
@@ -544,6 +625,9 @@ function LoginContent() {
               {tab === "login" ? "Kayıt olun" : "Giriş yapın"}
             </button>
           </p>
+          </motion.div>
+          )}
+          </AnimatePresence>
         </div>
 
         {/* Back link */}
@@ -554,6 +638,142 @@ function LoginContent() {
         </p>
       </motion.div>
     </div>
+  );
+}
+
+// ─── "Onay Kodu Bekleniyor" ekranı ──────────────────────────────────────────────
+// Kayıt sonrası kartın içeriği bu premium doğrulama ekranıyla yer değiştirir.
+
+function VerifyEmailScreen({
+  email, c, isDark, displayFont, bodyFont,
+  resendCooldown, resending, resendState, onResend, onBack,
+}: {
+  email: string; c: CP; isDark: boolean;
+  displayFont: string; bodyFont: string;
+  resendCooldown: number; resending: boolean;
+  resendState: "idle" | "sent" | "error";
+  onResend: () => void; onBack: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.96, y: 10 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.97, y: -8 }}
+      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+      className="text-center py-2"
+    >
+      {/* Parlayan animasyonlu zarf */}
+      <div className="relative w-24 h-24 mx-auto mb-8">
+        {/* Arka plan glow — nefes alan mor/pembe ışıma */}
+        <motion.div
+          animate={{ opacity: [0.35, 0.75, 0.35], scale: [1, 1.12, 1] }}
+          transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute -inset-4 rounded-full blur-2xl"
+          style={{ background: "linear-gradient(135deg,#7C3AED,#EC4899)" }}
+        />
+        {/* Radar halkaları */}
+        {[0, 1].map((i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0.5, scale: 1 }}
+            animate={{ opacity: 0, scale: 1.55 }}
+            transition={{ duration: 2.2, repeat: Infinity, delay: i * 1.1, ease: "easeOut" }}
+            className="absolute inset-0 rounded-3xl"
+            style={{ border: "2px solid #A855F7" }}
+          />
+        ))}
+        {/* Zarf — hafif süzülme */}
+        <motion.div
+          animate={{ y: [0, -6, 0] }}
+          transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+          className="relative w-24 h-24 rounded-3xl flex items-center justify-center"
+          style={{
+            background: "linear-gradient(135deg,#7C3AED,#EC4899)",
+            boxShadow: "0 16px 48px rgba(124,58,237,0.45)",
+          }}
+        >
+          <MailCheck className="w-10 h-10 text-white" strokeWidth={1.8} />
+          <motion.div
+            animate={{ rotate: [0, 18, -8, 0], scale: [1, 1.25, 1] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute -top-1.5 -right-2"
+          >
+            <Sparkles className="w-5 h-5" style={{ color: "#FBBF24" }} />
+          </motion.div>
+        </motion.div>
+      </div>
+
+      <h2
+        style={{
+          fontFamily: displayFont, fontSize: "1.7rem", fontWeight: 400,
+          lineHeight: 1.15, letterSpacing: "-0.015em", color: c.text,
+          marginBottom: "0.7rem",
+        }}
+      >
+        E-posta Adresini Doğrula
+      </h2>
+
+      <p
+        className="text-sm leading-relaxed mb-2 max-w-sm mx-auto"
+        style={{ color: c.textMuted, fontFamily: bodyFont }}
+      >
+        <strong style={{ color: c.text }}>info@optiefy.com</strong> adresinden{" "}
+        <strong style={{ color: c.text }}>{email}</strong> adresine bir aktivasyon
+        bağlantısı gönderildi. Lütfen gelen kutunu ve spam klasörünü kontrol et.
+      </p>
+
+      {/* Yeniden gönderme geri bildirimi */}
+      <div className="h-6 mb-4">
+        <AnimatePresence mode="wait">
+          {resendState === "sent" && (
+            <motion.p key="sent" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className="text-xs font-medium inline-flex items-center gap-1.5"
+              style={{ color: "#22C55E", fontFamily: bodyFont }}>
+              <CheckCircle className="w-3.5 h-3.5" /> Yeni doğrulama bağlantısı gönderildi
+            </motion.p>
+          )}
+          {resendState === "error" && (
+            <motion.p key="err" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className="text-xs font-medium inline-flex items-center gap-1.5"
+              style={{ color: "#EF4444", fontFamily: bodyFont }}>
+              <AlertCircle className="w-3.5 h-3.5" /> Gönderilemedi — lütfen birazdan tekrar deneyin
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <div className="space-y-3">
+        {/* Tekrar gönder */}
+        <button
+          onClick={onResend}
+          disabled={resendCooldown > 0 || resending}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium disabled:opacity-45 transition-opacity"
+          style={{
+            background: isDark ? "rgba(255,255,255,0.06)" : "#F5F5F3",
+            border: `1.5px solid ${c.border}`,
+            color: c.textMuted,
+            fontFamily: bodyFont,
+            cursor: resendCooldown > 0 || resending ? "default" : "pointer",
+          }}
+        >
+          <RefreshCw className={`w-4 h-4 ${resending ? "animate-spin" : ""}`} />
+          {resendCooldown > 0
+            ? `Tekrar Gönder (${resendCooldown}s)`
+            : resending ? "Gönderiliyor…" : "E-postayı Tekrar Gönder"}
+        </button>
+
+        {/* Giriş ekranına dön */}
+        <motion.button
+          whileHover={{ opacity: 0.85 }}
+          whileTap={{ scale: 0.97 }}
+          onClick={onBack}
+          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-semibold"
+          style={{ background: c.ctaBg, color: c.ctaText, fontFamily: bodyFont }}
+        >
+          <ArrowLeft className="w-4 h-4" /> Giriş Ekranına Dön
+        </motion.button>
+      </div>
+    </motion.div>
   );
 }
 

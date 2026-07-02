@@ -1,21 +1,42 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+/**
+ * Ürün Kataloğu — performans odaklı yeniden yazım.
+ *
+ * - useProducts: bellek + sessionStorage SWR cache → sayfa geçişlerinde anlık render
+ * - useDeferredValue ile takılmayan arama; memoize edilmiş satırlar
+ * - next/image ile küçük, blur placeholder'lı thumbnail'ler
+ * - sonner toast'ları; optimistic durum/silme güncellemeleri
+ */
+
+import { useEffect, useState, useCallback, useMemo, useDeferredValue, memo } from "react";
+import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, Package, Pencil,
   Power, Loader2, Search, X, RefreshCw, Trash2, Save,
-  Tag, FileText, Store,
+  Tag, FileText, Store, Image as ImageIcon, AlertTriangle,
 } from "lucide-react";
+import { toast } from "sonner";
 import type { Product } from "@/types/store";
 import {
   usePanelTheme, PANEL_DISPLAY_FONT, PANEL_BODY_FONT, type PanelPalette,
 } from "../_lib/theme";
 import { useActiveStore } from "../_lib/storeContext";
+import { useProducts } from "../_lib/useProducts";
 import ProductEditorDrawer from "../_components/ProductEditorDrawer";
-import Toast from "@/components/Toast";
+import ProductImageUploader from "../_components/ProductImageUploader";
+import {
+  type ProductDraft, emptyDraft, draftToPayload,
+  makeInputStyle, makeLabelStyle,
+  InventorySection, VariantSection, SeoSection,
+} from "../_components/ProductFormSections";
 
 type StatusFilter = "all" | "active" | "pending";
+
+// 1×1 şeffaf PNG — next/image blur placeholder'ı
+const BLUR_1PX =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
 // ─── Sayfa ───────────────────────────────────────────────────────────────────
 
@@ -23,108 +44,86 @@ export default function UrunlerPage() {
   const { c, isDark } = usePanelTheme();
   const { activeStore, activeStoreId } = useActiveStore();
 
-  const [products,     setProducts]     = useState<Product[]>([]);
-  const [loading,      setLoading]      = useState(true);
-  const [refreshing,   setRefreshing]   = useState(false);
-  const productsReady                   = useRef(false);
+  const { products: productsRaw, loading, refreshing, mutate } = useProducts(activeStoreId);
+  const products = useMemo(() => productsRaw ?? [], [productsRaw]);
+  const hasData = productsRaw !== null;
 
   const [togglingId,   setTogglingId]   = useState<string | null>(null);
   const [deletingId,   setDeletingId]   = useState<string | null>(null);
   const [highlightId,  setHighlightId]  = useState<string | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [addOpen,      setAddOpen]      = useState(false);
-  const [toastMsg,     setToastMsg]     = useState("");
-  const [showToast,    setShowToast]    = useState(false);
 
   const [search,       setSearch]       = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const deferredSearch = useDeferredValue(search);
 
-  const toast = (msg: string) => { setToastMsg(msg); setShowToast(true); };
-
-  // ── Ürünleri çek — aktif mağaza değişince yeniden tetiklenir ──
-  const fetchProducts = useCallback(async (sid: string | null, silent = false) => {
-    if (!sid) { setProducts([]); setLoading(false); return; }
-    if (!silent) {
-      if (!productsReady.current) setLoading(true);
-      else setRefreshing(true);
-    }
-    const res = await fetch(`/api/products?storeId=${sid}`, { cache: "no-store" });
-    if (res.ok) {
-      const data = await res.json() as Product[];
-      setProducts(data);
-      productsReady.current = true;
-    } else {
-      console.error("Products fetch failed:", res.status, await res.text().catch(() => ""));
-    }
-    setLoading(false);
-    setRefreshing(false);
-  }, []);
-
-  useEffect(() => {
-    productsReady.current = false;
-    setProducts([]);
-    fetchProducts(activeStoreId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStoreId]);
-
-  // ── Status toggle ──
+  // ── Status toggle — optimistic ──
   const handleStatusToggle = useCallback(async (product: Product) => {
     const next = product.status === "active" ? "pending" : "active";
     setTogglingId(product.id);
-    setProducts((prev) => prev.map((p) => p.id === product.id ? { ...p, status: next } : p));
+    mutate((prev) => prev.map((p) => p.id === product.id ? { ...p, status: next } : p));
     const res = await fetch("/api/products", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: product.id, status: next }),
     });
     if (!res.ok) {
-      setProducts((prev) => prev.map((p) => p.id === product.id ? { ...p, status: product.status } : p));
-      toast("Durum güncellenirken hata oluştu.");
+      mutate((prev) => prev.map((p) => p.id === product.id ? { ...p, status: product.status } : p));
+      toast.error("Durum güncellenirken hata oluştu.");
     } else {
-      toast(next === "active" ? "Ürün yayına alındı ✓" : "Ürün taslağa alındı");
+      toast.success(next === "active" ? "Ürün yayına alındı" : "Ürün taslağa alındı");
     }
     setTogglingId(null);
-  }, []);
+  }, [mutate]);
 
-  // ── Silme ──
+  // ── Silme — optimistic ──
   const handleDelete = useCallback(async (product: Product) => {
     setDeletingId(product.id);
     const res = await fetch(`/api/products?id=${product.id}`, { method: "DELETE" });
     if (res.ok) {
-      setProducts((prev) => prev.filter((p) => p.id !== product.id));
-      toast("Ürün silindi.");
+      mutate((prev) => prev.filter((p) => p.id !== product.id));
+      toast.success("Ürün silindi.");
     } else {
-      toast("Silerken bir hata oluştu.");
+      toast.error("Silerken bir hata oluştu.");
     }
     setDeletingId(null);
-  }, []);
+  }, [mutate]);
 
-  const handleProductCreated = useCallback(async () => {
-    await fetchProducts(activeStoreId, true);
-    toast("Yeni ürün kataloğa eklendi ✓");
-  }, [fetchProducts, activeStoreId]);
+  const handleProductCreated = useCallback((created: Product) => {
+    mutate((prev) => [created, ...prev]);
+    setHighlightId(created.id);
+    toast.success("Yeni ürün kataloğa eklendi");
+    setTimeout(() => setHighlightId(null), 2600);
+  }, [mutate]);
 
   const handleProductSaved = useCallback((productId: string, patch: Partial<Product>) => {
-    setProducts((prev) => prev.map((p) => p.id === productId ? { ...p, ...patch } : p));
+    mutate((prev) => prev.map((p) => p.id === productId ? { ...p, ...patch } : p));
     setHighlightId(productId);
-    toast("Ürün bilgileri güncellendi ✓");
+    toast.success("Ürün bilgileri güncellendi");
     setTimeout(() => setHighlightId(null), 2600);
-  }, []);
+  }, [mutate]);
+
+  const handleEdit = useCallback((p: Product) => setEditingProduct(p), []);
 
   const filtered = useMemo(() => {
     let list = products;
     if (statusFilter !== "all") list = list.filter((p) => (p.status ?? "active") === statusFilter);
-    if (search.trim()) {
-      const q = search.toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
+    if (q) {
       list = list.filter((p) =>
         p.name.toLowerCase().includes(q) ||
-        (p.description ?? "").toLowerCase().includes(q),
+        (p.description ?? "").toLowerCase().includes(q) ||
+        (p.sku ?? "").toLowerCase().includes(q),
       );
     }
     return list;
-  }, [products, statusFilter, search]);
+  }, [products, statusFilter, deferredSearch]);
 
-  const activeCount = products.filter((p) => (p.status ?? "active") === "active").length;
+  const counts = useMemo(() => ({
+    active:  products.filter((p) => (p.status ?? "active") === "active").length,
+    pending: products.filter((p) => (p.status ?? "active") === "pending").length,
+  }), [products]);
 
   // Nav editöründeki alt menüler → ürün kategori seçenekleri.
   // Slug, alt menü URL'inin son segmentidir (/urunler/yeni-urunler → "yeni-urunler").
@@ -143,14 +142,13 @@ export default function UrunlerPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <Toast message={toastMsg} show={showToast} onHide={() => setShowToast(false)} />
-
       {/* Ürün ekleme modalı */}
       <AddProductModal
         open={addOpen}
         c={c}
         isDark={isDark}
         storeId={activeStoreId}
+        storeDomain={activeStore?.custom_domain}
         categoryOptions={categoryOptions}
         onClose={() => setAddOpen(false)}
         onCreated={handleProductCreated}
@@ -163,6 +161,7 @@ export default function UrunlerPage() {
         isDark={isDark}
         open={!!editingProduct}
         categoryOptions={categoryOptions}
+        storeDomain={activeStore?.custom_domain}
         onClose={() => setEditingProduct(null)}
         onSaved={handleProductSaved}
       />
@@ -189,10 +188,10 @@ export default function UrunlerPage() {
               </AnimatePresence>
             </div>
             <p className="text-sm" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
-              {loading && !productsReady.current
+              {loading && !hasData
                 ? "Yükleniyor…"
                 : activeStore
-                  ? `${products.length} ürün · ${activeCount} yayında · ${activeStore.store_name}`
+                  ? `${products.length} ürün · ${counts.active} yayında · ${activeStore.store_name}`
                   : "Bir mağaza seçin"}
             </p>
           </div>
@@ -246,12 +245,12 @@ export default function UrunlerPage() {
       )}
 
       {/* ── Toolbar ── */}
-      {activeStoreId && (!loading || productsReady.current) && (
+      {activeStoreId && (hasData || !loading) && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
           className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1 max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: c.textSubtle }} />
-            <input type="text" placeholder="Ürün ara…" value={search} onChange={(e) => setSearch(e.target.value)}
+            <input type="text" placeholder="Ürün ara… (ad, açıklama, SKU)" value={search} onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-9 pr-8 py-2 rounded-xl text-sm outline-none"
               style={{ background: c.hover, border: `1px solid ${c.border}`, color: c.text, fontFamily: PANEL_BODY_FONT }} />
             {search && (
@@ -277,9 +276,7 @@ export default function UrunlerPage() {
                     {key === "pending" && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#F59E0B" }} />}
                     {label}
                     {key !== "all" && (
-                      <span className="text-[10px] opacity-70">
-                        ({products.filter((p) => (p.status ?? "active") === key).length})
-                      </span>
+                      <span className="text-[10px] opacity-70">({counts[key]})</span>
                     )}
                   </span>
                 </button>
@@ -292,7 +289,7 @@ export default function UrunlerPage() {
       {/* ── İçerik ── */}
       {activeStoreId && (
         <>
-          {loading && !productsReady.current ? (
+          {loading && !hasData ? (
             <SkeletonTable c={c} />
           ) : products.length === 0 ? (
             <EmptyState c={c} onCreate={() => setAddOpen(true)} />
@@ -302,7 +299,7 @@ export default function UrunlerPage() {
             <ProductTable
               products={filtered} c={c} isDark={isDark}
               togglingId={togglingId} deletingId={deletingId} highlightId={highlightId}
-              onEdit={setEditingProduct}
+              onEdit={handleEdit}
               onStatusToggle={handleStatusToggle}
               onDelete={handleDelete}
             />
@@ -315,30 +312,20 @@ export default function UrunlerPage() {
 
 // ─── Ürün Ekleme Modalı ───────────────────────────────────────────────────────
 
-type AddDraft = {
-  name:        string;
-  price:       string;
-  currency:    "TRY" | "USD";
-  description: string;
-  status:      "active" | "pending";
-  category:    string; // nav alt menü slug'ı — "" → kategorisiz
-};
-
 function AddProductModal({
-  open, c, isDark, storeId, categoryOptions, onClose, onCreated,
+  open, c, isDark, storeId, storeDomain, categoryOptions, onClose, onCreated,
 }: {
   open: boolean; c: PanelPalette; isDark: boolean;
   storeId: string | null;
+  storeDomain?: string | null;
   categoryOptions: { label: string; slug: string }[];
-  onClose: () => void; onCreated: () => void;
+  onClose: () => void; onCreated: (product: Product) => void;
 }) {
-  const BLANK: AddDraft = { name: "", price: "", currency: "TRY", description: "", status: "active", category: "" };
-  const [draft,  setDraft]  = useState<AddDraft>(BLANK);
+  const [draft,  setDraft]  = useState<ProductDraft>(emptyDraft);
   const [saving, setSaving] = useState(false);
   const [err,    setErr]    = useState("");
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!open) { setDraft(BLANK); setErr(""); } }, [open]);
+  useEffect(() => { if (!open) { setDraft(emptyDraft()); setErr(""); } }, [open]);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -346,7 +333,13 @@ function AddProductModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  const p = (patch: Partial<AddDraft>) => { setDraft((d) => ({ ...d, ...patch })); setErr(""); };
+  const patch = useCallback((p: Partial<ProductDraft>) => {
+    setDraft((d) => ({ ...d, ...p })); setErr("");
+  }, []);
+
+  const patchImages = useCallback((updater: (prev: string[]) => string[]) => {
+    setDraft((d) => ({ ...d, image_urls: updater(d.image_urls) }));
+  }, []);
 
   const handleSave = async () => {
     if (!storeId) { setErr("Önce bir mağaza seçin."); return; }
@@ -357,32 +350,21 @@ function AddProductModal({
     const res = await fetch("/api/products", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        store_id:    storeId,
-        name:        draft.name.trim(),
-        price:       priceNum,
-        currency:    draft.currency,
-        description: draft.description.trim() || null,
-        status:      draft.status,
-        category:    draft.category || null,
-      }),
+      body: JSON.stringify({ store_id: storeId, ...draftToPayload(draft) }),
     });
     setSaving(false);
-    if (!res.ok) { setErr("Kaydedilirken hata oluştu."); return; }
-    onCreated();
+    if (!res.ok) {
+      setErr("Kaydedilirken hata oluştu.");
+      toast.error("Ürün eklenemedi — lütfen tekrar deneyin.");
+      return;
+    }
+    const created = await res.json() as Product;
+    onCreated(created);
     onClose();
   };
 
-  const inp: React.CSSProperties = {
-    width: "100%", padding: "10px 13px", borderRadius: 11, fontSize: 14,
-    background: isDark ? "#111" : "#F9F9F9",
-    border: `1px solid ${c.border}`, color: c.text,
-    outline: "none", fontFamily: PANEL_BODY_FONT,
-  };
-  const lbl: React.CSSProperties = {
-    fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em",
-    color: c.textSubtle, fontFamily: PANEL_BODY_FONT, marginBottom: 6, display: "block",
-  };
+  const inp = makeInputStyle(c, isDark);
+  const lbl = makeLabelStyle(c);
 
   return (
     <AnimatePresence>
@@ -399,8 +381,8 @@ function AddProductModal({
             style={{ pointerEvents: "none" }}
           >
             <div
-              className="w-full max-w-lg rounded-2xl overflow-hidden flex flex-col"
-              style={{ background: c.appBg, border: `1px solid ${c.border}`, boxShadow: c.shadowMd, pointerEvents: "all", maxHeight: "90vh" }}
+              className="w-full max-w-xl rounded-2xl overflow-hidden flex flex-col"
+              style={{ background: c.appBg, border: `1px solid ${c.border}`, boxShadow: c.shadowMd, pointerEvents: "all", maxHeight: "92vh" }}
             >
               {/* Başlık */}
               <div className="flex items-center justify-between px-5 py-4 flex-shrink-0"
@@ -426,10 +408,24 @@ function AddProductModal({
               {/* Form */}
               <div className="overflow-y-auto flex-1 px-5 py-5 space-y-5">
 
+                {/* Görseller — drag & drop */}
+                <div>
+                  <label style={lbl}>
+                    <span className="flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5 inline" /> Ürün Görselleri</span>
+                  </label>
+                  <ProductImageUploader
+                    images={draft.image_urls}
+                    onImagesChange={patchImages}
+                    storeId={storeId}
+                    c={c} isDark={isDark}
+                    onError={(msg) => toast.error(msg)}
+                  />
+                </div>
+
                 {/* Ürün Adı */}
                 <div>
                   <label style={lbl}><span className="flex items-center gap-1.5"><Tag className="w-3.5 h-3.5 inline" /> Ürün Adı *</span></label>
-                  <input value={draft.name} onChange={(e) => p({ name: e.target.value })}
+                  <input value={draft.name} onChange={(e) => patch({ name: e.target.value })}
                     placeholder="Ör: El Yapımı Seramik Kase" style={inp} maxLength={120} autoFocus />
                 </div>
 
@@ -439,7 +435,7 @@ function AddProductModal({
                   <div className="flex gap-2">
                     <div className="flex rounded-xl overflow-hidden flex-shrink-0" style={{ border: `1px solid ${c.border}` }}>
                       {(["TRY", "USD"] as const).map((cur) => (
-                        <button key={cur} onClick={() => p({ currency: cur })}
+                        <button key={cur} onClick={() => patch({ currency: cur })}
                           className="px-3.5 py-2.5 text-sm font-bold transition-colors"
                           style={{
                             background: draft.currency === cur ? "linear-gradient(135deg,#7C3AED,#EC4899)" : "transparent",
@@ -450,7 +446,7 @@ function AddProductModal({
                         </button>
                       ))}
                     </div>
-                    <input value={draft.price} inputMode="decimal" onChange={(e) => p({ price: e.target.value })}
+                    <input value={draft.price} inputMode="decimal" onChange={(e) => patch({ price: e.target.value })}
                       placeholder={draft.currency === "TRY" ? "299,90" : "49.99"}
                       style={{ ...inp, flex: 1 }} />
                   </div>
@@ -459,7 +455,7 @@ function AddProductModal({
                 {/* Açıklama */}
                 <div>
                   <label style={lbl}><span className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5 inline" /> Ürün Açıklaması</span></label>
-                  <textarea value={draft.description} onChange={(e) => p({ description: e.target.value })}
+                  <textarea value={draft.description} onChange={(e) => patch({ description: e.target.value })}
                     placeholder="Ürünün özelliklerini, hikayesini kısaca anlatın…"
                     rows={3} style={{ ...inp, resize: "vertical", lineHeight: 1.6 }} maxLength={500} />
                 </div>
@@ -470,7 +466,7 @@ function AddProductModal({
                     <label style={lbl}>Kategori / Alt Menü</label>
                     <select
                       value={draft.category}
-                      onChange={(e) => p({ category: e.target.value })}
+                      onChange={(e) => patch({ category: e.target.value })}
                       style={{ ...inp, cursor: "pointer" }}
                     >
                       <option value="">Kategorisiz — yalnızca Tüm Ürünler&apos;de</option>
@@ -484,6 +480,15 @@ function AddProductModal({
                   </div>
                 )}
 
+                {/* Stok Takibi */}
+                <InventorySection draft={draft} patch={patch} c={c} isDark={isDark} />
+
+                {/* Varyantlar */}
+                <VariantSection draft={draft} patch={patch} c={c} isDark={isDark} />
+
+                {/* SEO */}
+                <SeoSection draft={draft} patch={patch} c={c} isDark={isDark} storeDomain={storeDomain} />
+
                 {err && <p className="text-xs" style={{ color: "#EF4444", fontFamily: PANEL_BODY_FONT }}>{err}</p>}
               </div>
 
@@ -491,7 +496,7 @@ function AddProductModal({
               <div className="flex items-center gap-2.5 px-5 py-4 flex-shrink-0"
                 style={{ borderTop: `1px solid ${c.border}`, background: c.cardBg }}>
                 {/* Yayın toggle */}
-                <button onClick={() => p({ status: draft.status === "active" ? "pending" : "active" })}
+                <button onClick={() => patch({ status: draft.status === "active" ? "pending" : "active" })}
                   className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold flex-shrink-0"
                   style={{
                     background: draft.status === "active" ? "rgba(34,197,94,0.12)" : c.hover,
@@ -539,10 +544,10 @@ function ProductTable({
       className="rounded-2xl overflow-hidden"
       style={{ background: c.cardBg, border: `1px solid ${c.border}`, boxShadow: c.shadow }}>
       <div className="overflow-x-auto">
-        <table className="w-full" style={{ borderCollapse: "collapse", minWidth: 640 }}>
+        <table className="w-full" style={{ borderCollapse: "collapse", minWidth: 720 }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${c.borderSoft}` }}>
-              {["Ürün", "Fiyat", "Durum", "Eklenme", ""].map((h, i) => (
+              {["Ürün", "Fiyat", "Stok", "Durum", "Eklenme", ""].map((h, i) => (
                 <th key={i} className="text-left px-5 py-3.5 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap"
                   style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT, background: isDark ? "rgba(255,255,255,0.015)" : "rgba(0,0,0,0.018)" }}>
                   {h}
@@ -557,9 +562,9 @@ function ProductTable({
                 toggling={togglingId === product.id}
                 deleting={deletingId === product.id}
                 highlight={highlightId === product.id}
-                onEdit={() => onEdit(product)}
-                onStatusToggle={() => onStatusToggle(product)}
-                onDelete={() => onDelete(product)}
+                onEdit={onEdit}
+                onStatusToggle={onStatusToggle}
+                onDelete={onDelete}
               />
             ))}
           </tbody>
@@ -574,15 +579,17 @@ function ProductTable({
   );
 }
 
-// ─── Ürün Satırı ──────────────────────────────────────────────────────────────
+// ─── Ürün Satırı — memoized: liste güncellemelerinde yalnızca değişen satır render edilir ──
 
-function ProductRow({
+const ProductRow = memo(function ProductRow({
   product, isLast, c, isDark, toggling, deleting, highlight,
   onEdit, onStatusToggle, onDelete,
 }: {
   product: Product; isLast: boolean; c: PanelPalette; isDark: boolean;
   toggling: boolean; deleting: boolean; highlight: boolean;
-  onEdit: () => void; onStatusToggle: () => void; onDelete: () => void;
+  onEdit: (p: Product) => void;
+  onStatusToggle: (p: Product) => void;
+  onDelete: (p: Product) => void;
 }) {
   const [hovered,       setHovered]       = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -590,6 +597,12 @@ function ProductRow({
   const isLive = (product.status ?? "active") === "active";
   const cur    = product.currency === "USD" ? "$" : "₺";
   const price  = typeof product.price === "number" ? product.price : 0;
+
+  const coverUrl = product.image_urls?.[0] ?? product.image_url;
+  const extraImages = (product.image_urls?.length ?? 0) - 1;
+
+  const stock = product.stock_quantity;
+  const outOfStock = stock === 0 && !product.sell_when_out_of_stock;
 
   const rowBg = highlight
     ? isDark ? "rgba(168,85,247,0.07)" : "#FAF5FF"
@@ -600,7 +613,7 @@ function ProductRow({
     <tr
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); setConfirmDelete(false); }}
-      onClick={onEdit}
+      onClick={() => onEdit(product)}
       className="cursor-pointer"
       style={{
         borderBottom: isLast ? "none" : `1px solid ${c.borderSoft}`,
@@ -615,15 +628,28 @@ function ProductRow({
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 relative"
             style={{ background: isDark ? "#111" : "#F4F4F2", border: `1px solid ${c.border}` }}>
-            {product.image_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={product.image_url} alt={product.name}
-                className="w-full h-full object-contain p-1.5"
-                style={{ filter: isLive ? "none" : "grayscale(0.4)" }} />
+            {coverUrl ? (
+              coverUrl.startsWith("http") ? (
+                <Image src={coverUrl} alt={product.name} width={96} height={96}
+                  placeholder="blur" blurDataURL={BLUR_1PX}
+                  className="w-full h-full object-contain p-1.5"
+                  style={{ filter: isLive ? "none" : "grayscale(0.4)" }} />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={coverUrl} alt={product.name}
+                  className="w-full h-full object-contain p-1.5"
+                  style={{ filter: isLive ? "none" : "grayscale(0.4)" }} />
+              )
             ) : (
               <div className="w-full h-full flex items-center justify-center">
                 <Package className="w-5 h-5" style={{ color: c.textSubtle }} />
               </div>
+            )}
+            {extraImages > 0 && (
+              <span className="absolute bottom-0.5 right-0.5 px-1 rounded text-[9px] font-bold text-white"
+                style={{ background: "rgba(0,0,0,0.6)" }}>
+                +{extraImages}
+              </span>
             )}
           </div>
           <div className="min-w-0">
@@ -648,6 +674,29 @@ function ProductRow({
         </span>
       </td>
 
+      {/* Stok */}
+      <td className="px-5 py-3.5 whitespace-nowrap">
+        {stock == null ? (
+          <span className="text-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>—</span>
+        ) : outOfStock ? (
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold"
+            style={{ color: "#EF4444", fontFamily: PANEL_BODY_FONT }}>
+            <AlertTriangle className="w-3 h-3" /> Tükendi
+          </span>
+        ) : (
+          <span className="text-sm font-semibold"
+            style={{ color: stock <= 5 ? "#F59E0B" : c.text, fontFamily: PANEL_BODY_FONT }}>
+            {stock}
+          </span>
+        )}
+        {product.sku && (
+          <p className="text-[10px] mt-0.5 truncate max-w-[100px]"
+            style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+            {product.sku}
+          </p>
+        )}
+      </td>
+
       {/* Durum */}
       <td className="px-5 py-3.5 whitespace-nowrap">
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
@@ -656,8 +705,7 @@ function ProductRow({
             color:      isLive ? "#16A34A"                : "#B45309",
             border:     `1px solid ${isLive ? "rgba(34,197,94,0.3)" : "rgba(245,158,11,0.3)"}`,
           }}>
-          <motion.span animate={isLive ? { scale: [1,1.4,1] } : {}} transition={{ duration: 1.8, repeat: Infinity }}
-            className="w-1.5 h-1.5 rounded-full" style={{ background: isLive ? "#22C55E" : "#F59E0B" }} />
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: isLive ? "#22C55E" : "#F59E0B" }} />
           {isLive ? "Yayında" : "Taslak"}
         </span>
       </td>
@@ -676,7 +724,7 @@ function ProductRow({
           onClick={(e) => e.stopPropagation()}>
 
           <button title={isLive ? "Taslağa al" : "Yayına al"}
-            onClick={() => { if (!toggling) onStatusToggle(); }}
+            onClick={() => { if (!toggling) onStatusToggle(product); }}
             className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
             style={{ background: isLive ? "rgba(34,197,94,0.1)" : c.hover, border: `1px solid ${isLive ? "rgba(34,197,94,0.25)" : c.border}` }}>
             {toggling
@@ -693,7 +741,7 @@ function ProductRow({
             </button>
           ) : (
             <div className="flex items-center gap-1">
-              <button onClick={() => { onDelete(); setConfirmDelete(false); }}
+              <button onClick={() => { onDelete(product); setConfirmDelete(false); }}
                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold"
                 style={{ background: "#EF4444", color: "white", fontFamily: PANEL_BODY_FONT }}>
                 {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : "Sil"}
@@ -707,7 +755,7 @@ function ProductRow({
           )}
 
           {/* Düzenle */}
-          <button title="Ürünü düzenle" onClick={onEdit}
+          <button title="Ürünü düzenle" onClick={() => onEdit(product)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
             style={{ background: c.accentSoft ?? "rgba(124,58,237,0.1)", border: `1px solid ${c.border}`, color: c.accentText ?? "#7C3AED", fontFamily: PANEL_BODY_FONT }}>
             <Pencil className="w-3.5 h-3.5" /> Düzenle
@@ -716,7 +764,7 @@ function ProductRow({
       </td>
     </tr>
   );
-}
+});
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
@@ -724,7 +772,7 @@ function SkeletonTable({ c }: { c: PanelPalette }) {
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: c.cardBg, border: `1px solid ${c.border}` }}>
       <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${c.borderSoft}`, background: c.hover }}>
-        <div className="flex gap-6">{[80,50,70,60,80].map((w, i) => (
+        <div className="flex gap-6">{[80,50,40,70,60,80].map((w, i) => (
           <div key={i} className="h-2.5 rounded animate-pulse" style={{ width: w, background: c.border }} />
         ))}</div>
       </div>
@@ -784,7 +832,7 @@ function EmptyState({ c, onCreate }: { c: PanelPalette; onCreate: () => void }) 
         Henüz ürün yok
       </h2>
       <p className="text-sm max-w-sm leading-relaxed mb-7" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
-        Bu mağazaya ilk ürününüzü ekleyin. Görsel, fiyat ve açıklama bilgilerini dilediğiniz zaman güncelleyebilirsiniz.
+        Bu mağazaya ilk ürününüzü ekleyin. Görsel, fiyat, stok ve SEO bilgilerini dilediğiniz zaman güncelleyebilirsiniz.
       </p>
       <motion.button onClick={onCreate} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
         className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl text-sm font-bold"

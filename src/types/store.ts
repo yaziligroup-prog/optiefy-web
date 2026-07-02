@@ -11,6 +11,15 @@ export type Product = {
   image_url?: string | null;
   status?: string | null; // 'active' | 'pending'
   category?: string | null; // nav alt menü slug'ı — vitrin kategori filtresi (örn: "yeni-urunler")
+  // Gelişmiş ticari alanlar (db/product_advanced_fields_migration.sql)
+  image_urls?: string[] | null; // çoklu görsel — [0] ana/cover görsel, image_url ile senkron
+  sku?: string | null;
+  stock_quantity?: number | null; // null → stok takibi yok (sınırsız)
+  sell_when_out_of_stock?: boolean | null;
+  variants?: { name: string; values: string[] }[] | null;
+  seo_title?: string | null;
+  seo_description?: string | null;
+  slug?: string | null;
 };
 
 // Canlı Tema Editörü'nün yayınladığı özelleştirmeler (stores.theme_settings jsonb)

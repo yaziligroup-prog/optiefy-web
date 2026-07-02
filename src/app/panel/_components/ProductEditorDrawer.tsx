@@ -1,12 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+/**
+ * Ürün Düzenle drawer'ı — Shopify standartlarında tam kapsamlı editör:
+ * çoklu görsel (drag & drop), stok takibi, varyantlar ve SEO önizlemesi.
+ */
+
+import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Save, Loader2, Tag, FileText, Power, Image as ImageIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import type { Product } from "@/types/store";
 import { PANEL_BODY_FONT, type PanelPalette } from "../_lib/theme";
+import ProductImageUploader from "./ProductImageUploader";
+import {
+  type ProductDraft, productToDraft, draftToPayload,
+  makeInputStyle, makeLabelStyle,
+  InventorySection, VariantSection, SeoSection,
+} from "./ProductFormSections";
 
 interface Props {
   product: Product | null;
@@ -15,32 +27,16 @@ interface Props {
   open: boolean;
   /** Nav editöründeki alt menülerden türeyen kategori seçenekleri */
   categoryOptions?: { label: string; slug: string }[];
+  /** SEO önizlemesindeki domain */
+  storeDomain?: string | null;
   onClose: () => void;
   onSaved: (productId: string, patch: Partial<Product>) => void;
 }
 
-type Draft = {
-  name:        string;
-  price:       string;
-  currency:    "TRY" | "USD";
-  description: string;
-  status:      "active" | "pending";
-  category:    string; // nav alt menü slug'ı — "" → kategorisiz
-};
-
-function productToDraft(p: Product): Draft {
-  return {
-    name:        p.name ?? "",
-    price:       String(p.price ?? ""),
-    currency:    p.currency === "USD" ? "USD" : "TRY",
-    description: p.description ?? "",
-    status:      p.status === "active" ? "active" : "pending",
-    category:    p.category ?? "",
-  };
-}
-
-export default function ProductEditorDrawer({ product, c, isDark, open, categoryOptions = [], onClose, onSaved }: Props) {
-  const [draft,  setDraft]  = useState<Draft | null>(null);
+export default function ProductEditorDrawer({
+  product, c, isDark, open, categoryOptions = [], storeDomain, onClose, onSaved,
+}: Props) {
+  const [draft,  setDraft]  = useState<ProductDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [err,    setErr]    = useState("");
   const [dirty,  setDirty]  = useState(false);
@@ -56,9 +52,18 @@ export default function ProductEditorDrawer({ product, c, isDark, open, category
     return () => window.removeEventListener("keydown", onKey);
   }, [open, saving, onClose]);
 
-  if (!product || !draft) return null;
+  const patch = useCallback((p: Partial<ProductDraft>) => {
+    setDraft((d) => (d ? { ...d, ...p } : d));
+    setDirty(true);
+    setErr("");
+  }, []);
 
-  const patch = (p: Partial<Draft>) => { setDraft((d) => d ? { ...d, ...p } : d); setDirty(true); setErr(""); };
+  const patchImages = useCallback((updater: (prev: string[]) => string[]) => {
+    setDraft((d) => (d ? { ...d, image_urls: updater(d.image_urls) } : d));
+    setDirty(true);
+  }, []);
+
+  if (!product || !draft) return null;
 
   const isLive = draft.status === "active";
 
@@ -67,43 +72,25 @@ export default function ProductEditorDrawer({ product, c, isDark, open, category
     if (!draft.name.trim()) { setErr("Ürün adı boş olamaz."); return; }
     if (isNaN(priceNum) || priceNum <= 0) { setErr("Geçerli bir fiyat girin."); return; }
     setSaving(true); setErr("");
+    const payload = draftToPayload(draft);
     const res = await fetch("/api/products", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id:          product.id,
-        name:        draft.name.trim(),
-        price:       priceNum,
-        currency:    draft.currency,
-        description: draft.description.trim() || null,
-        status:      draft.status,
-        category:    draft.category || null,
-      }),
+      body: JSON.stringify({ id: product.id, ...payload }),
     });
     setSaving(false);
-    if (!res.ok) { setErr("Kaydedilirken hata oluştu."); return; }
-    onSaved(product.id, {
-      name:        draft.name.trim(),
-      price:       priceNum,
-      currency:    draft.currency,
-      description: draft.description.trim() || null,
-      status:      draft.status,
-      category:    draft.category || null,
-    });
+    if (!res.ok) {
+      setErr("Kaydedilirken hata oluştu.");
+      toast.error("Ürün kaydedilemedi — lütfen tekrar deneyin.");
+      return;
+    }
+    onSaved(product.id, payload as Partial<Product>);
     setDirty(false);
     onClose();
   };
 
-  const inp: React.CSSProperties = {
-    width: "100%", padding: "10px 13px", borderRadius: 11, fontSize: 14,
-    background: c.inputBg ?? (isDark ? "#111" : "#F9F9F9"),
-    border: `1px solid ${c.border}`, color: c.text,
-    outline: "none", fontFamily: PANEL_BODY_FONT,
-  };
-  const lbl: React.CSSProperties = {
-    fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em",
-    color: c.textSubtle, fontFamily: PANEL_BODY_FONT, marginBottom: 6, display: "block",
-  };
+  const inp = makeInputStyle(c, isDark);
+  const lbl = makeLabelStyle(c);
 
   return (
     <AnimatePresence>
@@ -121,7 +108,7 @@ export default function ProductEditorDrawer({ product, c, isDark, open, category
             transition={{ type: "spring", stiffness: 340, damping: 36 }}
             className="fixed right-0 top-0 bottom-0 z-[81] flex flex-col"
             style={{
-              width: "min(520px, 100vw)",
+              width: "min(560px, 100vw)",
               background: c.appBg,
               borderLeft: `1px solid ${c.border}`,
               boxShadow: "-12px 0 48px rgba(0,0,0,0.22)",
@@ -149,22 +136,19 @@ export default function ProductEditorDrawer({ product, c, isDark, open, category
             {/* Scroll area */}
             <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
 
-              {/* Image preview (read-only) */}
-              {product.image_url && (
-                <div className="rounded-2xl overflow-hidden"
-                  style={{ background: isDark ? "#111" : "#F4F4F2", border: `1px solid ${c.border}`, height: 200 }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={product.image_url} alt={product.name}
-                    className="w-full h-full object-contain p-4" />
-                </div>
-              )}
-              {!product.image_url && (
-                <div className="rounded-2xl flex items-center justify-center gap-2"
-                  style={{ background: isDark ? "#111" : "#F4F4F2", border: `1px dashed ${c.border}`, height: 100 }}>
-                  <ImageIcon className="w-5 h-5" style={{ color: c.textSubtle }} />
-                  <span className="text-xs" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>Görsel yok</span>
-                </div>
-              )}
+              {/* Görseller — drag & drop */}
+              <div>
+                <label style={lbl}>
+                  <span className="flex items-center gap-1.5"><ImageIcon className="w-3 h-3 inline" /> Ürün Görselleri</span>
+                </label>
+                <ProductImageUploader
+                  images={draft.image_urls}
+                  onImagesChange={patchImages}
+                  storeId={product.store_id}
+                  c={c} isDark={isDark}
+                  onError={(msg) => toast.error(msg)}
+                />
+              </div>
 
               {/* Name */}
               <div>
@@ -232,6 +216,15 @@ export default function ProductEditorDrawer({ product, c, isDark, open, category
                   </p>
                 </div>
               )}
+
+              {/* Stok Takibi */}
+              <InventorySection draft={draft} patch={patch} c={c} isDark={isDark} />
+
+              {/* Varyantlar */}
+              <VariantSection draft={draft} patch={patch} c={c} isDark={isDark} />
+
+              {/* SEO */}
+              <SeoSection draft={draft} patch={patch} c={c} isDark={isDark} storeDomain={storeDomain} />
 
               {err && (
                 <p className="text-xs px-3 py-2 rounded-lg"
