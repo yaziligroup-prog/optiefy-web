@@ -48,8 +48,10 @@ function DetailInner({ store, product }: { store: Store; product: Product }) {
 
   const brand = store.store_name;
 
-  // Galeri: ürünün kendi görseli öncelikli; yoksa mağaza galerisinden beslenir
-  const images: string[] = product.image_url
+  // Galeri: ürünün kendi görselleri (çoklu) öncelikli; yoksa mağaza galerisinden beslenir
+  const images: string[] = product.images?.length
+    ? product.images
+    : product.image_url
     ? [product.image_url]
     : (store.image_urls ?? []).filter(Boolean);
   const [activeImg, setActiveImg] = useState(0);

@@ -8,6 +8,7 @@ import {
   Sparkles, Mail, Lock, Eye, EyeOff, ArrowRight,
   AlertCircle, CheckCircle, MailCheck, RefreshCw, ArrowLeft,
 } from "lucide-react";
+import { Toaster, toast } from "sonner";
 import OptiefyIcon from "@/components/OptiefyIcon";
 import { createClient } from "@/utils/supabase/client";
 
@@ -225,8 +226,28 @@ function LoginContent() {
       },
     });
     setResending(false);
-    setResendState(err ? "error" : "sent");
-    if (!err) setResendCooldown(60);
+
+    if (!err) {
+      setResendState("sent");
+      setResendCooldown(60);
+      toast.success("Doğrulama e-postası yeniden gönderildi 📬");
+      return;
+    }
+
+    setResendState("error");
+    // Rate limit (Supabase/Resend istek sınırı) ve ağ hatalarını tatlı dille ayrıştır
+    const isRateLimit =
+      err.status === 429 || /rate limit|too many|security purposes/i.test(err.message);
+    const isNetwork =
+      err.status === 0 || /fetch|network|failed to/i.test(err.message);
+    if (isRateLimit) {
+      toast.error("Çok fazla istek gönderdiniz, lütfen bir dakika bekleyin. ☕", { duration: 6000 });
+      setResendCooldown(60); // boşuna tekrar denemesin
+    } else if (isNetwork) {
+      toast.error("Bağlantı sorunu yaşandı — internetinizi kontrol edip tekrar deneyin.");
+    } else {
+      toast.error("E-posta gönderilemedi. Lütfen birazdan tekrar deneyin.");
+    }
   };
 
   const backToLogin = () => {
@@ -261,6 +282,7 @@ function LoginContent() {
       style={{ ...tr, background: c.bg, minHeight: "100vh", fontFamily: bodyFont }}
       className="flex flex-col items-center justify-center px-4 py-16"
     >
+      <Toaster position="top-center" richColors theme={isDark ? "dark" : "light"} />
       {/* Logo */}
       <Link href="/" className="flex items-center gap-2 mb-10 group">
         <div

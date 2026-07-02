@@ -8,6 +8,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import {
+  removeProductImagesFromStorage,
+  findOrphanedImages,
+} from "@/utils/supabase/storage-cleanup";
 
 async function getUser() {
   const cookieStore = await cookies();
@@ -42,22 +46,23 @@ function isMissingColumn(error: { code?: string; message?: string } | null) {
   );
 }
 
+// Dikkat: canlı şemada görseller "images" (text[]) kolonundadır ve
+// "image_url" diye bir kolon YOKTUR — payload'a asla eklenmemeli.
 const LEGACY_FIELDS = [
   "name",
   "price",
   "currency",
   "description",
-  "image_url",
   "status",
   "size_variants",
   "category",
 ] as const;
 
 const ADVANCED_FIELDS = [
-  "image_urls",
+  "images",
   "sku",
   "stock_quantity",
-  "sell_when_out_of_stock",
+  "continue_selling_out_of_stock",
   "variants",
   "seo_title",
   "seo_description",
@@ -142,7 +147,6 @@ export async function POST(req: NextRequest) {
     price,
     currency: body.currency ?? "TRY",
     description: body.description ?? null,
-    image_url: body.image_url ?? null,
     status: body.status ?? "active",
     category:
       typeof body.category === "string" && body.category.trim()
@@ -191,12 +195,13 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
   }
 
-  // Verify the product belongs to the user
+  // Sahiplik doğrulaması mağaza üzerinden yapılır (eski kayıtlarda
+  // products.user_id null olabilir) + mevcut görseller orphan temizliği için çekilir
   const { data: product, error: productError } = await admin()
     .from("products")
-    .select("id")
+    .select("id, store_id, images, stores!inner(user_id)")
     .eq("id", id)
-    .eq("user_id", user.id)
+    .eq("stores.user_id", user.id)
     .single();
 
   if (productError || !product) {
@@ -236,6 +241,19 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // Görsel listesi değiştiyse artık referans edilmeyen dosyaları Storage'dan
+  // temizle — best-effort, yanıtı bloklamaz
+  if ("images" in updates) {
+    const oldImages = Array.isArray(product.images) ? product.images : [];
+    const newImages = Array.isArray(updates.images)
+      ? (updates.images as string[])
+      : [];
+    const orphaned = findOrphanedImages(oldImages, newImages);
+    if (orphaned.length > 0) {
+      await removeProductImagesFromStorage(admin(), product.store_id, orphaned);
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }
 
@@ -251,12 +269,13 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
   }
 
-  // Verify the product belongs to the user
+  // Sahiplik doğrulaması mağaza üzerinden (eski kayıtlarda user_id null olabilir)
+  // + görseller, silme sonrası Storage temizliği için çekilir
   const { data: product, error: productError } = await admin()
     .from("products")
-    .select("id")
+    .select("id, store_id, images, stores!inner(user_id)")
     .eq("id", id)
-    .eq("user_id", user.id)
+    .eq("stores.user_id", user.id)
     .single();
 
   if (productError || !product) {
@@ -268,6 +287,13 @@ export async function DELETE(req: NextRequest) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Ürünün tüm görsellerini Storage'dan fiziksel olarak sil — best-effort
+  await removeProductImagesFromStorage(
+    admin(),
+    product.store_id,
+    Array.isArray(product.images) ? product.images : [],
+  );
 
   return NextResponse.json({ ok: true });
 }

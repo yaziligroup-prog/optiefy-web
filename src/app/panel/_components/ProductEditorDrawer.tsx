@@ -15,7 +15,7 @@ import type { Product } from "@/types/store";
 import { PANEL_BODY_FONT, type PanelPalette } from "../_lib/theme";
 import ProductImageUploader from "./ProductImageUploader";
 import {
-  type ProductDraft, productToDraft, draftToPayload,
+  type ProductDraft, productToDraft, draftToPayload, sanitizePriceInput,
   makeInputStyle, makeLabelStyle,
   InventorySection, VariantSection, SeoSection,
 } from "./ProductFormSections";
@@ -59,7 +59,7 @@ export default function ProductEditorDrawer({
   }, []);
 
   const patchImages = useCallback((updater: (prev: string[]) => string[]) => {
-    setDraft((d) => (d ? { ...d, image_urls: updater(d.image_urls) } : d));
+    setDraft((d) => (d ? { ...d, images: updater(d.images) } : d));
     setDirty(true);
   }, []);
 
@@ -142,7 +142,7 @@ export default function ProductEditorDrawer({
                   <span className="flex items-center gap-1.5"><ImageIcon className="w-3 h-3 inline" /> Ürün Görselleri</span>
                 </label>
                 <ProductImageUploader
-                  images={draft.image_urls}
+                  images={draft.images}
                   onImagesChange={patchImages}
                   storeId={product.store_id}
                   c={c} isDark={isDark}
@@ -179,7 +179,7 @@ export default function ProductEditorDrawer({
                     ))}
                   </div>
                   <input value={draft.price} inputMode="decimal"
-                    onChange={(e) => patch({ price: e.target.value })}
+                    onChange={(e) => patch({ price: sanitizePriceInput(e.target.value) })}
                     placeholder={draft.currency === "TRY" ? "299,90" : "49.99"}
                     style={{ ...inp, flex: 1 }} />
                 </div>

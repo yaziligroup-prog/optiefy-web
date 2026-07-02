@@ -105,7 +105,7 @@ function CollectionInner({ store, categorySlug, categoryLabel }: {
     : 16;
 
   const handleAdd = (p: Product) => {
-    addItem({ id: p.id, name: p.name, price: p.price ?? 0, image: p.image_url ?? null });
+    addItem({ id: p.id, name: p.name, price: p.price ?? 0, image: p.images?.[0] ?? p.image_url ?? null });
     openDrawer();
   };
 
@@ -234,10 +234,10 @@ function CollectionInner({ store, categorySlug, categoryLabel }: {
                 {/* Görsel — tema oranıyla, object-cover */}
                 <div className={`relative ${imgAspect} overflow-hidden`}
                   style={{ background: t.galleryBg, borderRadius: themeId === "luxury" ? cardRadius : 0 }}>
-                  {p.image_url ? (
+                  {(p.images?.[0] ?? p.image_url) ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={p.image_url}
+                      src={p.images?.[0] ?? p.image_url ?? ""}
                       alt={p.name}
                       className={`w-full h-full object-cover object-center transition-transform duration-500 group-hover:scale-[1.05] ${themeId === "dynamic" ? "group-hover:rotate-1" : ""}`}
                     />

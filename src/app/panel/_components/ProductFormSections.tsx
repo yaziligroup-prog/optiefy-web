@@ -24,10 +24,10 @@ export type ProductDraft = {
   description: string;
   status:      "active" | "pending";
   category:    string; // nav alt menü slug'ı — "" → kategorisiz
-  image_urls:  string[];
+  images:      string[]; // [0] = ana/cover görsel (DB kolonu: images text[])
   sku:         string;
   stock_quantity: string; // "" → stok takibi yok
-  sell_when_out_of_stock: boolean;
+  continue_selling_out_of_stock: boolean;
   variants:    VariantOption[];
   seo_title:   string;
   seo_description: string;
@@ -37,15 +37,15 @@ export type ProductDraft = {
 export function emptyDraft(): ProductDraft {
   return {
     name: "", price: "", currency: "TRY", description: "",
-    status: "active", category: "", image_urls: [],
-    sku: "", stock_quantity: "", sell_when_out_of_stock: false,
+    status: "active", category: "", images: [],
+    sku: "", stock_quantity: "", continue_selling_out_of_stock: false,
     variants: [], seo_title: "", seo_description: "", slug: "",
   };
 }
 
 export function productToDraft(p: Product): ProductDraft {
-  const imageUrls = p.image_urls?.length
-    ? p.image_urls
+  const images = p.images?.length
+    ? p.images
     : p.image_url ? [p.image_url] : [];
   return {
     name:        p.name ?? "",
@@ -54,15 +54,48 @@ export function productToDraft(p: Product): ProductDraft {
     description: p.description ?? "",
     status:      p.status === "active" ? "active" : "pending",
     category:    p.category ?? "",
-    image_urls:  imageUrls,
+    images,
     sku:         p.sku ?? "",
     stock_quantity: p.stock_quantity == null ? "" : String(p.stock_quantity),
-    sell_when_out_of_stock: !!p.sell_when_out_of_stock,
+    continue_selling_out_of_stock: !!p.continue_selling_out_of_stock,
     variants:    Array.isArray(p.variants) ? p.variants : [],
     seo_title:   p.seo_title ?? "",
     seo_description: p.seo_description ?? "",
     slug:        p.slug ?? "",
   };
+}
+
+/**
+ * SKU girişini anlık temizler: Türkçe karakterler Latin karşılığına çevrilir,
+ * harf/rakam/tire/alt çizgi/nokta/slash dışındaki semboller atılır, BÜYÜK harfe çevrilir.
+ */
+export function sanitizeSku(text: string): string {
+  const map: Record<string, string> = {
+    ç: "C", ğ: "G", ı: "I", i: "I", ö: "O", ş: "S", ü: "U",
+    Ç: "C", Ğ: "G", İ: "I", Ö: "O", Ş: "S", Ü: "U",
+  };
+  return text
+    .replace(/[çğıiöşüÇĞİÖŞÜ]/g, (ch) => map[ch] ?? ch)
+    .toUpperCase()
+    .replace(/[^A-Z0-9\-_./]/g, "")
+    .slice(0, 60);
+}
+
+/**
+ * Fiyat girişini anlık temizler: yalnızca rakam ve TEK ondalık ayracına
+ * (virgül veya nokta) izin verir — harf, negatif işaret vb. yazılamaz.
+ */
+export function sanitizePriceInput(text: string): string {
+  let out = "";
+  let sepUsed = false;
+  for (const ch of text) {
+    if (ch >= "0" && ch <= "9") out += ch;
+    else if ((ch === "," || ch === ".") && !sepUsed && out.length > 0) {
+      out += ch;
+      sepUsed = true;
+    }
+  }
+  return out.slice(0, 12);
 }
 
 /** Türkçe karakterleri sadeleştirerek SEO dostu slug üretir. */
@@ -91,11 +124,10 @@ export function draftToPayload(d: ProductDraft) {
     description: d.description.trim() || null,
     status:      d.status,
     category:    d.category || null,
-    image_url:   d.image_urls[0] ?? null, // cover — legacy alanla senkron
-    image_urls:  d.image_urls,
+    images:      d.images, // [0] = cover
     sku:         d.sku.trim() || null,
     stock_quantity: stockNum,
-    sell_when_out_of_stock: d.sell_when_out_of_stock,
+    continue_selling_out_of_stock: d.continue_selling_out_of_stock,
     variants:    d.variants
       .map((v) => ({ name: v.name.trim(), values: v.values.filter(Boolean) }))
       .filter((v) => v.name && v.values.length > 0),
@@ -171,13 +203,16 @@ export function InventorySection({
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label style={lbl}>SKU (Stok Kodu)</label>
-          <input value={draft.sku} onChange={(e) => patch({ sku: e.target.value })}
-            placeholder="ÖR: TSHIRT-SYH-M" style={inp} maxLength={60} />
+          <input value={draft.sku} onChange={(e) => patch({ sku: sanitizeSku(e.target.value) })}
+            placeholder="ÖR: TSHIRT-SYH-M" style={inp} maxLength={60}
+            autoCapitalize="characters" spellCheck={false} />
         </div>
         <div>
           <label style={lbl}>Stok Adedi</label>
-          <input value={draft.stock_quantity} inputMode="numeric"
-            onChange={(e) => patch({ stock_quantity: e.target.value.replace(/[^0-9]/g, "") })}
+          {/* Yalnızca rakam — negatif değer ve işaret girişi imkânsız */}
+          <input value={draft.stock_quantity} type="text" inputMode="numeric"
+            pattern="[0-9]*"
+            onChange={(e) => patch({ stock_quantity: e.target.value.replace(/[^0-9]/g, "").slice(0, 7) })}
             placeholder="Boş = sınırsız" style={inp} maxLength={7} />
         </div>
       </div>
@@ -185,17 +220,17 @@ export function InventorySection({
       <label className="flex items-center gap-2.5 cursor-pointer select-none">
         <span className="relative w-[18px] h-[18px] rounded-md flex-shrink-0 flex items-center justify-center transition-colors"
           style={{
-            background: draft.sell_when_out_of_stock ? "#7C3AED" : "transparent",
-            border: `1.5px solid ${draft.sell_when_out_of_stock ? "#7C3AED" : c.border}`,
+            background: draft.continue_selling_out_of_stock ? "#7C3AED" : "transparent",
+            border: `1.5px solid ${draft.continue_selling_out_of_stock ? "#7C3AED" : c.border}`,
           }}>
-          {draft.sell_when_out_of_stock && (
+          {draft.continue_selling_out_of_stock && (
             <svg viewBox="0 0 10 8" className="w-2.5 h-2.5" fill="none">
               <path d="M1 4L3.8 6.8L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           )}
         </span>
-        <input type="checkbox" hidden checked={draft.sell_when_out_of_stock}
-          onChange={(e) => patch({ sell_when_out_of_stock: e.target.checked })} />
+        <input type="checkbox" hidden checked={draft.continue_selling_out_of_stock}
+          onChange={(e) => patch({ continue_selling_out_of_stock: e.target.checked })} />
         <span className="text-xs" style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}>
           Stok tükendiğinde de satışa devam et
         </span>

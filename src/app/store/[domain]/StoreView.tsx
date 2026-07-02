@@ -405,11 +405,12 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
   }
 
   const images: string[] = (() => {
-    if (fp?.image_url) return [toDataUrl(fp.image_url)];
+    const fpImg = fp?.images?.[0] ?? fp?.image_url;
+    if (fpImg) return [toDataUrl(fpImg)];
     if (store.image_urls?.length) return store.image_urls;
     if (store.product_image_base64) return [toDataUrl(store.product_image_base64)];
     const fromProducts = aiProducts
-      .map((p) => p.image_url)
+      .map((p) => p.images?.[0] ?? p.image_url)
       .filter((u): u is string => !!u)
       .map(toDataUrl);
     if (fromProducts.length) return fromProducts;
@@ -1484,7 +1485,7 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
             {(fp ? aiProducts.filter((p) => p.id !== fp.id) : aiProducts.slice(1)).map((prod) => {
-              const prodImg = prod.image_url ?? null;
+              const prodImg = prod.images?.[0] ?? prod.image_url ?? null;
               const prodPrice = prod.price ?? 0;
               const priceDisplay = store.currency === "USD"
                 ? "$" + prodPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })

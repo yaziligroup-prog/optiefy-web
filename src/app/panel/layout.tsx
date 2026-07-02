@@ -11,7 +11,7 @@ import {
   LayoutDashboard, ShoppingBag, Package, Users, Store, Settings,
   Search, Bell, Sun, Moon, ChevronDown, Menu,
   LogOut, User as UserIcon, CreditCard, ArrowUpRight,
-  Check, Globe, Plus, Lock, X as XIcon, Palette,
+  Check, Globe, Plus, Lock, X as XIcon, Palette, WifiOff,
 } from "lucide-react";
 import OptiefyIcon from "@/components/OptiefyIcon";
 import {
@@ -760,6 +760,78 @@ function PanelToaster() {
   return <Toaster position="top-center" richColors closeButton theme={isDark ? "dark" : "light"} />;
 }
 
+// ─── Bağlantı izleyici ───────────────────────────────────────────────────────
+// İnternet koptuğunda panelin altında kalıcı bir uyarı bandı gösterir,
+// bağlantı dönünce toast ile haber verir.
+
+function ConnectionWatcher() {
+  const [offline, setOffline] = useState(false);
+  const wasOffline = useRef(false);
+
+  useEffect(() => {
+    setOffline(!navigator.onLine);
+    wasOffline.current = !navigator.onLine;
+
+    const handleOffline = () => {
+      wasOffline.current = true;
+      setOffline(true);
+    };
+    const handleOnline = () => {
+      setOffline(false);
+      if (wasOffline.current) {
+        wasOffline.current = false;
+        toast.success("Bağlantı yeniden kuruldu — kaldığınız yerden devam edebilirsiniz ✓");
+      }
+    };
+
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, []);
+
+  return (
+    <AnimatePresence>
+      {offline && (
+        <motion.div
+          initial={{ y: 80, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 80, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 380, damping: 32 }}
+          className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[250] flex items-center gap-3 px-5 py-3 rounded-2xl max-w-[92vw]"
+          style={{
+            background: "rgba(15,23,42,0.96)",
+            backdropFilter: "blur(20px)",
+            border: "1px solid rgba(239,68,68,0.35)",
+            boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
+          }}
+        >
+          <span className="relative flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center"
+            style={{ background: "rgba(239,68,68,0.15)" }}>
+            <WifiOff className="w-4 h-4" style={{ color: "#F87171" }} />
+          </span>
+          <div>
+            <p className="text-[13px] font-semibold text-white leading-tight" style={{ fontFamily: PANEL_BODY_FONT }}>
+              Bağlantı Kesildi
+            </p>
+            <p className="text-[11px] mt-0.5" style={{ color: "#94A3B8", fontFamily: PANEL_BODY_FONT }}>
+              İnternet bağlantınızı kontrol edin — değişiklikler kaydedilemeyebilir.
+            </p>
+          </div>
+          <motion.span
+            animate={{ opacity: [1, 0.35, 1] }}
+            transition={{ duration: 1.6, repeat: Infinity }}
+            className="w-2 h-2 rounded-full flex-shrink-0 ml-1"
+            style={{ background: "#EF4444" }}
+          />
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 // ─── Root layout export ──────────────────────────────────────────────────────
 
 export default function PanelLayout({ children }: { children: React.ReactNode }) {
@@ -767,6 +839,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
     <PanelThemeProvider>
       <StoreProvider>
         <PanelToaster />
+        <ConnectionWatcher />
         <Suspense fallback={null}>
           <VerifiedToastListener />
         </Suspense>

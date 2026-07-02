@@ -27,7 +27,7 @@ import { useProducts } from "../_lib/useProducts";
 import ProductEditorDrawer from "../_components/ProductEditorDrawer";
 import ProductImageUploader from "../_components/ProductImageUploader";
 import {
-  type ProductDraft, emptyDraft, draftToPayload,
+  type ProductDraft, emptyDraft, draftToPayload, sanitizePriceInput,
   makeInputStyle, makeLabelStyle,
   InventorySection, VariantSection, SeoSection,
 } from "../_components/ProductFormSections";
@@ -338,7 +338,7 @@ function AddProductModal({
   }, []);
 
   const patchImages = useCallback((updater: (prev: string[]) => string[]) => {
-    setDraft((d) => ({ ...d, image_urls: updater(d.image_urls) }));
+    setDraft((d) => ({ ...d, images: updater(d.images) }));
   }, []);
 
   const handleSave = async () => {
@@ -414,7 +414,7 @@ function AddProductModal({
                     <span className="flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5 inline" /> Ürün Görselleri</span>
                   </label>
                   <ProductImageUploader
-                    images={draft.image_urls}
+                    images={draft.images}
                     onImagesChange={patchImages}
                     storeId={storeId}
                     c={c} isDark={isDark}
@@ -446,7 +446,8 @@ function AddProductModal({
                         </button>
                       ))}
                     </div>
-                    <input value={draft.price} inputMode="decimal" onChange={(e) => patch({ price: e.target.value })}
+                    <input value={draft.price} inputMode="decimal"
+                      onChange={(e) => patch({ price: sanitizePriceInput(e.target.value) })}
                       placeholder={draft.currency === "TRY" ? "299,90" : "49.99"}
                       style={{ ...inp, flex: 1 }} />
                   </div>
@@ -598,11 +599,11 @@ const ProductRow = memo(function ProductRow({
   const cur    = product.currency === "USD" ? "$" : "₺";
   const price  = typeof product.price === "number" ? product.price : 0;
 
-  const coverUrl = product.image_urls?.[0] ?? product.image_url;
-  const extraImages = (product.image_urls?.length ?? 0) - 1;
+  const coverUrl = product.images?.[0] ?? product.image_url;
+  const extraImages = (product.images?.length ?? 0) - 1;
 
   const stock = product.stock_quantity;
-  const outOfStock = stock === 0 && !product.sell_when_out_of_stock;
+  const outOfStock = stock === 0 && !product.continue_selling_out_of_stock;
 
   const rowBg = highlight
     ? isDark ? "rgba(168,85,247,0.07)" : "#FAF5FF"

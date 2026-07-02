@@ -8,14 +8,14 @@ export type Product = {
   price: number;
   currency?: string | null;
   description?: string | null;
-  image_url?: string | null;
+  image_url?: string | null; // LEGACY — DB'de bu kolon YOK; yalnızca eski kod yolları için opsiyonel. Görseller images[]'ta.
   status?: string | null; // 'active' | 'pending'
   category?: string | null; // nav alt menü slug'ı — vitrin kategori filtresi (örn: "yeni-urunler")
-  // Gelişmiş ticari alanlar (db/product_advanced_fields_migration.sql)
-  image_urls?: string[] | null; // çoklu görsel — [0] ana/cover görsel, image_url ile senkron
+  // Gelişmiş ticari alanlar (db/product_advanced_fields_migration.sql — canlı şema adlarıyla)
+  images?: string[] | null; // çoklu görsel — [0] ana/cover görsel
   sku?: string | null;
   stock_quantity?: number | null; // null → stok takibi yok (sınırsız)
-  sell_when_out_of_stock?: boolean | null;
+  continue_selling_out_of_stock?: boolean | null;
   variants?: { name: string; values: string[] }[] | null;
   seo_title?: string | null;
   seo_description?: string | null;
