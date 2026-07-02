@@ -13,6 +13,8 @@ interface Props {
   c: PanelPalette;
   isDark: boolean;
   open: boolean;
+  /** Nav editöründeki alt menülerden türeyen kategori seçenekleri */
+  categoryOptions?: { label: string; slug: string }[];
   onClose: () => void;
   onSaved: (productId: string, patch: Partial<Product>) => void;
 }
@@ -23,6 +25,7 @@ type Draft = {
   currency:    "TRY" | "USD";
   description: string;
   status:      "active" | "pending";
+  category:    string; // nav alt menü slug'ı — "" → kategorisiz
 };
 
 function productToDraft(p: Product): Draft {
@@ -32,10 +35,11 @@ function productToDraft(p: Product): Draft {
     currency:    p.currency === "USD" ? "USD" : "TRY",
     description: p.description ?? "",
     status:      p.status === "active" ? "active" : "pending",
+    category:    p.category ?? "",
   };
 }
 
-export default function ProductEditorDrawer({ product, c, isDark, open, onClose, onSaved }: Props) {
+export default function ProductEditorDrawer({ product, c, isDark, open, categoryOptions = [], onClose, onSaved }: Props) {
   const [draft,  setDraft]  = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [err,    setErr]    = useState("");
@@ -73,6 +77,7 @@ export default function ProductEditorDrawer({ product, c, isDark, open, onClose,
         currency:    draft.currency,
         description: draft.description.trim() || null,
         status:      draft.status,
+        category:    draft.category || null,
       }),
     });
     setSaving(false);
@@ -83,6 +88,7 @@ export default function ProductEditorDrawer({ product, c, isDark, open, onClose,
       currency:    draft.currency,
       description: draft.description.trim() || null,
       status:      draft.status,
+      category:    draft.category || null,
     });
     setDirty(false);
     onClose();
@@ -206,6 +212,26 @@ export default function ProductEditorDrawer({ product, c, isDark, open, onClose,
                   rows={4} maxLength={500}
                   style={{ ...inp, resize: "vertical", lineHeight: 1.6 }} />
               </div>
+
+              {/* Kategori — nav editöründeki alt menülerden beslenir */}
+              {categoryOptions.length > 0 && (
+                <div>
+                  <label style={lbl}>Kategori / Alt Menü</label>
+                  <select
+                    value={draft.category}
+                    onChange={(e) => patch({ category: e.target.value })}
+                    style={{ ...inp, cursor: "pointer" }}
+                  >
+                    <option value="">Kategorisiz — yalnızca Tüm Ürünler&apos;de</option>
+                    {categoryOptions.map((o) => (
+                      <option key={o.slug} value={o.slug}>{o.label}</option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] mt-1.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+                    Ürün, seçilen alt menünün kategori sayfasında (&quot;/urunler/{draft.category || "…"}&quot;) listelenir.
+                  </p>
+                </div>
+              )}
 
               {err && (
                 <p className="text-xs px-3 py-2 rounded-lg"

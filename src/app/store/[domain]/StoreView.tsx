@@ -505,6 +505,29 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
   // Header icon color — white over full-bleed hero image, themed once scrolled
   const headerIconColor = scrolled ? t.titleColor : "#FFFFFF";
 
+  // ── Header coğrafyası ───────────────────────────────────────────────────────
+  // header_layout: "center" → nav solda, marka ortada, ikonlar sağda (3 bölge)
+  //                "left"   → marka solda, nav sağa yaslanır, ikonlar en sağda
+  // hide_store_name → logo yoksa marka alanı tamamen boş kalır (zorunlu isim yok)
+  const headerLayout = ts?.header_layout === "left" ? "left" : "center";
+  const brandHidden  = !!ts?.hide_store_name && !ts?.logo_url;
+
+  const brandNode = ts?.logo_url ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={ts.logo_url}
+      alt={brand}
+      className="h-7 md:h-8 w-auto object-contain flex-shrink-0"
+    />
+  ) : brandHidden ? null : (
+    <h1
+      className="text-[15px] md:text-base font-black tracking-[0.3em] uppercase truncate max-w-[180px] md:max-w-[240px] flex-shrink-0"
+      style={{ color: headerIconColor, fontFamily: t.fontFamily }}
+    >
+      {brand}
+    </h1>
+  );
+
   // ─── RENDER ────────────────────────────────────────────────────────────────────
 
   return (
@@ -560,8 +583,11 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
           <Menu className="w-5 h-5" style={{ color: headerIconColor }} />
         </button>
 
+        {/* Sol yerleşimde marka önce gelir — menüler sağa yaslanır */}
+        {headerLayout === "left" && <div className="mr-3 min-w-0">{brandNode}</div>}
+
         {/* Dinamik küçülen gap + truncate: 6 menüye kadar taşmadan sığar */}
-        <nav className="hidden md:flex items-center gap-x-3 xl:gap-x-6 flex-1 min-w-0">
+        <nav className={`hidden md:flex items-center gap-x-3 xl:gap-x-6 flex-1 min-w-0 ${headerLayout === "left" ? "justify-end" : ""}`}>
           {NAV_LINKS.map(({ label, href, children }) => {
             const hasChildren = !!children?.length;
             const isOpen = openNav === label;
@@ -632,23 +658,12 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
           })}
         </nav>
 
-        {ts?.logo_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={ts.logo_url}
-            alt={brand}
-            className="h-7 md:h-8 w-auto object-contain md:absolute md:left-1/2 md:-translate-x-1/2"
-          />
-        ) : (
-          <h1
-            className="text-[15px] md:text-base font-black tracking-[0.3em] uppercase md:absolute md:left-1/2 md:-translate-x-1/2"
-            style={{ color: headerIconColor, fontFamily: t.fontFamily }}
-          >
-            {brand}
-          </h1>
+        {/* Orta yerleşimde marka üç bölgeli flex'in merkezinde — absolute yok, çakışma yok */}
+        {headerLayout === "center" && brandNode && (
+          <div className="mx-3 min-w-0 flex justify-center">{brandNode}</div>
         )}
 
-        <div className="flex-1 flex justify-end items-center gap-3">
+        <div className={`flex justify-end items-center gap-3 ${headerLayout === "center" ? "flex-1" : "flex-shrink-0 ml-3"}`}>
           {/* Para birimi seçici — theme_settings.show_currency_selector */}
           {ts?.show_currency_selector && (
             <select

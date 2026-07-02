@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { store_id, name, price, currency, description, image_url, status } =
+  const { store_id, name, price, currency, description, image_url, status, category } =
     body;
 
   if (!store_id || !name || price === undefined) {
@@ -110,6 +110,7 @@ export async function POST(req: NextRequest) {
       description: description ?? null,
       image_url: image_url ?? null,
       status: status ?? "active",
+      category: typeof category === "string" && category.trim() ? category.trim().slice(0, 60) : null,
     })
     .select()
     .single();
@@ -155,6 +156,7 @@ export async function PATCH(req: NextRequest) {
     "image_url",
     "status",
     "size_variants",
+    "category",
   ];
 
   const updates: Record<string, unknown> = {};

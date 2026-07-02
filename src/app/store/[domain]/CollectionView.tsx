@@ -16,7 +16,12 @@ import CartDrawer from "@/components/store/CartDrawer";
 import CheckoutModal from "@/components/store/CheckoutModal";
 import { applyThemeSettings, getLayout, contrastText } from "./StoreView";
 
-function CollectionInner({ store }: { store: Store }) {
+function CollectionInner({ store, categorySlug, categoryLabel }: {
+  store: Store;
+  /** Dolu ise yalnızca bu kategori slug'ına bağlı ürünler listelenir */
+  categorySlug?: string;
+  categoryLabel?: string;
+}) {
   const themeId: ThemeId =
     store.theme && THEMES[store.theme as ThemeId] ? (store.theme as ThemeId) : "modern";
   const ts     = store.theme_settings ?? null;
@@ -62,7 +67,13 @@ function CollectionInner({ store }: { store: Store }) {
     status:        "active",
   };
 
-  const products: Product[] = [flagship, ...tableProducts];
+  // Kategori görünümü: yalnızca o slug'a bağlanmış ürünler (amiral gemisi dahil edilmez);
+  // genel katalog: amiral gemisi + tüm görünür ürünler
+  const products: Product[] = categorySlug
+    ? tableProducts.filter((p) => p.category === categorySlug)
+    : [flagship, ...tableProducts];
+
+  const pageTitle = categoryLabel ?? "Tüm Ürünler";
 
   const fmtPrice = (price: number) =>
     store.currency === "USD"
@@ -145,11 +156,13 @@ function CollectionInner({ store }: { store: Store }) {
           className="leading-[1.08] tracking-tight mb-4"
           style={{ color: t.titleColor, fontFamily: titleFont, fontSize: "clamp(2.2rem, 5vw, 3.6rem)", fontWeight: layout === "tech" ? 800 : 400 }}
         >
-          Tüm Ürünler
+          {pageTitle}
         </h1>
         <p className="text-sm" style={{ color: t.subtleText }}>
           {products.length > 0
             ? `${products.length} el yapımı ürün · Her parça bir ustanın imzasını taşır`
+            : categorySlug
+            ? "Bu koleksiyona henüz ürün eklenmedi"
             : "Koleksiyon hazırlanıyor"}
         </p>
       </div>
@@ -264,10 +277,12 @@ function CollectionInner({ store }: { store: Store }) {
   );
 }
 
-export default function CollectionView({ store }: { store: Store }) {
+export default function CollectionView({ store, categorySlug, categoryLabel }: {
+  store: Store; categorySlug?: string; categoryLabel?: string;
+}) {
   return (
     <CartProvider>
-      <CollectionInner store={store} />
+      <CollectionInner store={store} categorySlug={categorySlug} categoryLabel={categoryLabel} />
     </CartProvider>
   );
 }

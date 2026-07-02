@@ -10,6 +10,7 @@ export type Product = {
   description?: string | null;
   image_url?: string | null;
   status?: string | null; // 'active' | 'pending'
+  category?: string | null; // nav alt menü slug'ı — vitrin kategori filtresi (örn: "yeni-urunler")
 };
 
 // Canlı Tema Editörü'nün yayınladığı özelleştirmeler (stores.theme_settings jsonb)
@@ -36,6 +37,8 @@ export type StoreThemeSettings = {
   }[] | null;
   hero_image_url?:    string | null; // hero arka plan görseli override (https veya data:image)
   dark_mode?:         boolean | null; // vitrin gece modu
+  hide_store_name?:   boolean | null; // true → header'da marka metni tamamen gizlenir
+  header_layout?:     "center" | "left" | null; // marka/logo konumu (varsayılan: center)
 };
 
 export type Store = {

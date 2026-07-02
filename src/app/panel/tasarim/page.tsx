@@ -15,6 +15,7 @@ import {
   Upload, X, ArrowRight, Sparkles, Undo2, Truck, Award, Gem,
   Smartphone, Tablet, ChevronDown, PanelTop, Instagram, Twitter, Facebook, Layers,
   Menu as MenuIcon, GripVertical, Plus, Moon, CornerDownRight, ListPlus,
+  AlignLeft, AlignCenter,
 } from "lucide-react";
 import {
   usePanelTheme, PANEL_BODY_FONT, PANEL_DISPLAY_FONT, type PanelPalette,
@@ -61,16 +62,17 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-const autoSlugUrl = (label: string): string => {
+// prefix: alt menüler /urunler/<slug> konvansiyonuyla doğar → otomatik kategori sayfası
+const autoSlugUrl = (label: string, prefix = ""): string => {
   const s = slugify(label);
-  return s ? `/${s}` : "#";
+  return s ? `${prefix}/${s}` : "#";
 };
 
 // URL hâlâ otomatik türetilmiş durumdaysa (boş, "#" veya önceki etiketin slug'ı)
 // etiket yazılırken senkron güncellenir; kullanıcı URL'e elle dokunduysa dokunulmaz.
-const shouldAutoSlug = (currentUrl: string, prevLabel: string): boolean => {
+const shouldAutoSlug = (currentUrl: string, prevLabel: string, prefix = ""): boolean => {
   const u = currentUrl.trim();
-  return u === "" || u === "#" || u === autoSlugUrl(prevLabel);
+  return u === "" || u === "#" || u === autoSlugUrl(prevLabel, prefix);
 };
 
 type EditorSettings = {
@@ -93,6 +95,7 @@ type EditorSettings = {
   navLinks:         NavLink[]; // vitrin nav menüsü (inline düzenlenebilir + sıralanabilir)
   heroImageUrl:     string;    // hero arka plan görseli override ("" → ürün görseli)
   darkMode:         boolean;   // vitrin gece modu
+  headerLayout:     "center" | "left"; // marka/logo konumu
 };
 
 // Editörde önizlenen dükkanın cihaz modu — sadece yerel görünüm, yayınlanmaz
@@ -111,7 +114,8 @@ function fromStore(s: Store): EditorSettings {
   const ts = s.theme_settings;
   return {
     themeId:          s.theme && THEMES[s.theme as ThemeId] ? (s.theme as ThemeId) : "modern",
-    storeName:        s.store_name ?? "",
+    // hide_store_name aktifse editör alanı boş açılır — vitrinde marka gizli demektir
+    storeName:        ts?.hide_store_name ? "" : (s.store_name ?? ""),
     announcementText: ts?.announcement_text ?? "",
     primaryColor:     ts?.primary_color     ?? "#7C3AED",
     buttonRadius:     ts?.button_radius     ?? 12,
@@ -135,6 +139,7 @@ function fromStore(s: Store): EditorSettings {
       })),
     heroImageUrl:     ts?.hero_image_url ?? "",
     darkMode:         ts?.dark_mode      ?? false,
+    headerLayout:     ts?.header_layout === "left" ? "left" : "center",
   };
 }
 
@@ -145,7 +150,7 @@ const FALLBACK_SETTINGS: EditorSettings = {
   showCountdown: false, showCurrencySelector: false,
   socialInstagram: "", socialTwitter: "", socialFacebook: "",
   navLinks: DEFAULT_NAV_LINKS.map((l) => ({ id: navId(), ...l })),
-  heroImageUrl: "", darkMode: false,
+  heroImageUrl: "", darkMode: false, headerLayout: "center",
 };
 
 // ─── Premium hazır seçimler ──────────────────────────────────────────────────
@@ -375,15 +380,15 @@ function NavChildRow({ child, canDelete, onPatch, onRemove, c }: {
 }) {
   const controls = useDragControls();
 
-  // Etiket yazılırken URL hâlâ otomatikse slug senkron üretilir
+  // Etiket yazılırken URL hâlâ otomatikse slug senkron üretilir (/urunler/<slug>)
   const handleLabel = (v: string) => {
     const patch: Partial<NavChild> = { label: v };
-    if (shouldAutoSlug(child.url, child.label)) patch.url = autoSlugUrl(v);
+    if (shouldAutoSlug(child.url, child.label, "/urunler")) patch.url = autoSlugUrl(v, "/urunler");
     onPatch(patch);
   };
   const handleUrlBlur = () => {
     const u = child.url.trim();
-    if (!u) onPatch({ url: autoSlugUrl(child.label) });
+    if (!u) onPatch({ url: autoSlugUrl(child.label, "/urunler") });
     else if (!u.startsWith("/") && !u.startsWith("#")) onPatch({ url: `/${u}` });
   };
 
@@ -447,7 +452,7 @@ function NavParentRow({ link, canDelete, onPatch, onRemove, c, accent }: {
 
   const addChild = () => {
     if (children.length >= 6) return;
-    onPatch({ children: [...children, { id: navId(), label: "Yeni Alt Menü", url: autoSlugUrl("Yeni Alt Menü") }] });
+    onPatch({ children: [...children, { id: navId(), label: "Yeni Alt Menü", url: autoSlugUrl("Yeni Alt Menü", "/urunler") }] });
   };
 
   // Etiket yazılırken URL hâlâ otomatikse slug senkron üretilir
@@ -942,10 +947,22 @@ function PreviewStore({ s, store, device }: { s: EditorSettings; store: Store | 
           <div className="absolute inset-0" style={{ background: "#000000", opacity: Math.min(s.heroOverlay, 90) / 100 }} />
         )}
 
-        {/* Transparan header */}
-        <div className="absolute top-0 inset-x-0 flex items-center justify-between px-6 h-14 z-10">
+        {/* Transparan header — ayrışmış flex grupları, çakışmasız yerleşim */}
+        <div className="absolute top-0 inset-x-0 flex items-center px-6 h-14 z-10">
+          {/* Sol yerleşimde marka önce */}
+          {s.headerLayout === "left" && (
+            s.logoUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={s.logoUrl} alt={brand} className="h-6 w-auto object-contain mr-3 flex-shrink-0" />
+            ) : s.storeName.trim() ? (
+              <span className="text-xs font-black tracking-[0.3em] uppercase truncate max-w-[40%] mr-3 flex-shrink-0"
+                style={{ color: "#FFFFFF", fontFamily: headingFont }}>
+                {s.storeName.trim()}
+              </span>
+            ) : null
+          )}
           {!isMobile && (
-            <nav className="flex items-center gap-2.5 xl:gap-4 flex-1 min-w-0">
+            <nav className={`flex items-center gap-2.5 xl:gap-4 flex-1 min-w-0 ${s.headerLayout === "left" ? "justify-end" : ""}`}>
               {s.navLinks.slice(0, 6).map((item) => (
                 <span key={item.id} className="relative group flex items-center gap-0.5 text-[10px] font-medium tracking-wide cursor-default"
                   style={{ color: "rgba(255,255,255,0.85)" }}>
@@ -983,19 +1000,19 @@ function PreviewStore({ s, store, device }: { s: EditorSettings; store: Store | 
               ))}
             </nav>
           )}
-          {s.logoUrl ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={s.logoUrl} alt={brand}
-              className={`h-6 w-auto object-contain ${isMobile ? "" : "absolute left-1/2 -translate-x-1/2"}`} />
-          ) : (
-            <span
-              className={`text-xs font-black tracking-[0.3em] uppercase truncate max-w-[45%] ${isMobile ? "" : "absolute left-1/2 -translate-x-1/2"}`}
-              style={{ color: "#FFFFFF", fontFamily: headingFont }}
-            >
-              {brand}
-            </span>
+          {/* Orta yerleşimde marka üç bölgeli flex'in merkezinde */}
+          {s.headerLayout === "center" && (
+            s.logoUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={s.logoUrl} alt={brand} className="h-6 w-auto object-contain mx-2 flex-shrink-0" />
+            ) : s.storeName.trim() ? (
+              <span className="text-xs font-black tracking-[0.3em] uppercase truncate max-w-[40%] mx-2 flex-shrink-0"
+                style={{ color: "#FFFFFF", fontFamily: headingFont }}>
+                {s.storeName.trim()}
+              </span>
+            ) : null
           )}
-          <div className="flex-1 flex justify-end items-center gap-2.5">
+          <div className={`flex justify-end items-center gap-2.5 ${s.headerLayout === "center" ? "flex-1" : "flex-shrink-0 ml-3"}`}>
             {/* Para birimi seçici */}
             {s.showCurrencySelector && (
               <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md flex items-center gap-0.5"
@@ -1182,6 +1199,8 @@ export default function TasarimPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id:         activeStore.id,
+          // Alan boş bırakıldıysa DB'deki kanonik ad korunur (panel/siparişler için gerekli);
+          // vitrinde gizleme hide_store_name bayrağıyla yapılır — zorunlu isim dayatılmaz.
           store_name: settings.storeName.trim() || activeStore.store_name,
           theme:      settings.themeId, // baz tema — özelleştirmelerle aynı PATCH'te
           theme_settings: {
@@ -1200,6 +1219,8 @@ export default function TasarimPage() {
             social_twitter:    normalizeUrl(settings.socialTwitter),
             social_facebook:   normalizeUrl(settings.socialFacebook),
             // Editör-içi id'ler atılır — DB'ye yalın {label, url, children?} yazılır
+            hide_store_name: settings.storeName.trim() === "",
+            header_layout:   settings.headerLayout,
             nav_links: settings.navLinks.map(({ label, url, children }) => ({
               label, url,
               ...(children?.length
@@ -1255,12 +1276,44 @@ export default function TasarimPage() {
 
             <ThemePicker value={settings.themeId} onChange={(v) => set("themeId", v)} c={c} />
 
-            <TextSetting
-              icon={StoreIcon} iconColor="#7C3AED" title="Mağaza Adı"
-              value={settings.storeName}
-              onChange={(v) => set("storeName", v)}
-              placeholder="Örn: Vivinth Atölye" c={c}
-            />
+            <div className="space-y-2.5">
+              <TextSetting
+                icon={StoreIcon} iconColor="#7C3AED" title="Mağaza Adı"
+                value={settings.storeName}
+                onChange={(v) => set("storeName", v)}
+                placeholder="Boş bırakılırsa vitrinde isim gizlenir" c={c}
+              />
+              {/* Yerleşim seçici — marka/logo konumu */}
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-medium" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+                  Mağaza Adı / Logosu Nerede Dursun?
+                </p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {([
+                    { key: "left"   as const, Icon: AlignLeft,   label: "Sol — menüler sağda" },
+                    { key: "center" as const, Icon: AlignCenter, label: "Orta — menüler solda" },
+                  ]).map(({ key, Icon, label }) => {
+                    const active = settings.headerLayout === key;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => set("headerLayout", key)}
+                        className="flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-[10px] font-bold transition-all"
+                        style={{
+                          background: active ? `${settings.primaryColor}14` : c.cardBgSoft,
+                          border: active ? `1.5px solid ${settings.primaryColor}` : `1px solid ${c.borderSoft}`,
+                          color: active ? settings.primaryColor : c.textMuted,
+                          fontFamily: PANEL_BODY_FONT,
+                        }}
+                      >
+                        <Icon className="w-3 h-3 flex-shrink-0" />
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
 
             <LogoSetting
               value={settings.logoUrl}

@@ -332,7 +332,7 @@ export default function AnalyticsCharts({
     const prev7  = series.slice(Math.max(0, series.length - 14), Math.max(0, series.length - 7)).reduce((s, p) => s + p.visitors, 0);
     const visTrend = prev7 > 0 ? ((last7 - prev7) / prev7) * 100 : 0;
     return { totalVisitors, totalOrders, totalRevenue, conversion, visTrend };
-  }, [series, isReal, analytics]);
+  }, [series, analytics]);
 
   // Funnel — her zaman gerçek event verisi; API yanıtı yoksa sıfırlar gösterilir
   // (sahte 0.14 çarpanlı simülasyon kaldırıldı)

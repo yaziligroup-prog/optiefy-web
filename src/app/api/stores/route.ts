@@ -106,6 +106,10 @@ function sanitizeThemeSettings(raw: unknown): Record<string, unknown> | null {
   ) out.hero_image_url = src.hero_image_url;
   if (typeof src.dark_mode === "boolean") out.dark_mode = src.dark_mode;
 
+  // Marka görünürlüğü + header yerleşimi
+  if (typeof src.hide_store_name === "boolean") out.hide_store_name = src.hide_store_name;
+  if (src.header_layout === "center" || src.header_layout === "left") out.header_layout = src.header_layout;
+
   return out;
 }
 

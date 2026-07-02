@@ -126,6 +126,21 @@ export default function UrunlerPage() {
 
   const activeCount = products.filter((p) => (p.status ?? "active") === "active").length;
 
+  // Nav editöründeki alt menüler → ürün kategori seçenekleri.
+  // Slug, alt menü URL'inin son segmentidir (/urunler/yeni-urunler → "yeni-urunler").
+  const categoryOptions = useMemo(() => {
+    const opts: { label: string; slug: string }[] = [];
+    for (const link of activeStore?.theme_settings?.nav_links ?? []) {
+      for (const child of link.children ?? []) {
+        const slug = child.url.split("/").filter(Boolean).pop() ?? "";
+        if (slug && slug !== "#" && !opts.some((o) => o.slug === slug)) {
+          opts.push({ label: child.label, slug });
+        }
+      }
+    }
+    return opts;
+  }, [activeStore]);
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <Toast message={toastMsg} show={showToast} onHide={() => setShowToast(false)} />
@@ -136,6 +151,7 @@ export default function UrunlerPage() {
         c={c}
         isDark={isDark}
         storeId={activeStoreId}
+        categoryOptions={categoryOptions}
         onClose={() => setAddOpen(false)}
         onCreated={handleProductCreated}
       />
@@ -146,6 +162,7 @@ export default function UrunlerPage() {
         c={c}
         isDark={isDark}
         open={!!editingProduct}
+        categoryOptions={categoryOptions}
         onClose={() => setEditingProduct(null)}
         onSaved={handleProductSaved}
       />
@@ -304,16 +321,18 @@ type AddDraft = {
   currency:    "TRY" | "USD";
   description: string;
   status:      "active" | "pending";
+  category:    string; // nav alt menü slug'ı — "" → kategorisiz
 };
 
 function AddProductModal({
-  open, c, isDark, storeId, onClose, onCreated,
+  open, c, isDark, storeId, categoryOptions, onClose, onCreated,
 }: {
   open: boolean; c: PanelPalette; isDark: boolean;
   storeId: string | null;
+  categoryOptions: { label: string; slug: string }[];
   onClose: () => void; onCreated: () => void;
 }) {
-  const BLANK: AddDraft = { name: "", price: "", currency: "TRY", description: "", status: "active" };
+  const BLANK: AddDraft = { name: "", price: "", currency: "TRY", description: "", status: "active", category: "" };
   const [draft,  setDraft]  = useState<AddDraft>(BLANK);
   const [saving, setSaving] = useState(false);
   const [err,    setErr]    = useState("");
@@ -345,6 +364,7 @@ function AddProductModal({
         currency:    draft.currency,
         description: draft.description.trim() || null,
         status:      draft.status,
+        category:    draft.category || null,
       }),
     });
     setSaving(false);
@@ -443,6 +463,26 @@ function AddProductModal({
                     placeholder="Ürünün özelliklerini, hikayesini kısaca anlatın…"
                     rows={3} style={{ ...inp, resize: "vertical", lineHeight: 1.6 }} maxLength={500} />
                 </div>
+
+                {/* Kategori — nav editöründeki alt menülerden beslenir */}
+                {categoryOptions.length > 0 && (
+                  <div>
+                    <label style={lbl}>Kategori / Alt Menü</label>
+                    <select
+                      value={draft.category}
+                      onChange={(e) => p({ category: e.target.value })}
+                      style={{ ...inp, cursor: "pointer" }}
+                    >
+                      <option value="">Kategorisiz — yalnızca Tüm Ürünler&apos;de</option>
+                      {categoryOptions.map((o) => (
+                        <option key={o.slug} value={o.slug}>{o.label}</option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] mt-1.5" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+                      Ürün, seçilen alt menünün kategori sayfasında listelenir.
+                    </p>
+                  </div>
+                )}
 
                 {err && <p className="text-xs" style={{ color: "#EF4444", fontFamily: PANEL_BODY_FONT }}>{err}</p>}
               </div>

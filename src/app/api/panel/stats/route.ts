@@ -61,7 +61,6 @@ export async function GET(req: NextRequest) {
   const spanMs    = Math.max(end - start, 60_000);
   const prevStart = start - spanMs; // önceki eş dönem: [prevStart, start)
 
-  const startISO     = new Date(start).toISOString();
   const endISO       = new Date(end).toISOString();
   const prevStartISO = new Date(prevStart).toISOString();
 
