@@ -81,6 +81,32 @@ export function applyThemeSettings(base: ThemeConfig, ts: StoreThemeSettings | n
   if (heading) merged.fontFamily     = heading;
   if (body)    merged.fontFamilySans = body;
 
+  // Gece modu — zemin/metin paleti tek anahtarla koyulaşır; accent renkler korunur
+  if (ts.dark_mode) {
+    merged.bgColor      = "#0B0B0C";
+    merged.headerBg     = "#0B0B0C";
+    merged.galleryBg    = "linear-gradient(160deg, #141416 0%, #1B1B1E 50%, #141416 100%)";
+    merged.cardBg       = "#151517";
+    merged.titleColor   = "#F5F5F4";
+    merged.textColor    = "#C9C9CE";
+    merged.subtleText   = "#8B8B93";
+    merged.priceColor   = "#F5F5F4";
+    merged.borderColor  = "rgba(255,255,255,0.10)";
+    merged.footerBg     = "#060607";
+    merged.cartBg       = "#151517";
+    merged.cartBlur     = "none";
+    merged.cartBackdrop = "rgba(0,0,0,0.65)";
+    if (!ts.primary_color) {
+      // Ana renk seçilmemişse buton/ghost tonları koyu zeminde okunur kalsın
+      merged.ghostBorder    = "#F5F5F4";
+      merged.ghostText      = "#F5F5F4";
+      merged.ghostHoverBg   = "rgba(255,255,255,0.08)";
+      merged.ghostHoverText = "#F5F5F4";
+      merged.solidBtn       = "#F5F5F4";
+      merged.solidBtnText   = "#111111";
+    }
+  }
+
   return merged;
 }
 
@@ -319,12 +345,25 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
   const base      = pathname.startsWith("/store/") ? pathname.split("/").slice(0, 3).join("/") : "";
   const storeHref = (p: string) => (previewMode ? "#" : `${base}${p}` || "/");
 
-  const NAV_LINKS = [
-    { label: "Tüm Ürünler",  href: storeHref("/urunler") },
-    { label: "Koleksiyonlar", href: storeHref("/urunler") },
-    { label: "Hakkımızda",   href: "#hakkimizda" },
-    { label: "İletişim",     href: "#iletisim" },
-  ];
+  // Nav menüsü: editörde özelleştirilmişse theme_settings.nav_links, yoksa varsayılan.
+  // İki kademeli hiyerarşi — children taşıyan elemanlar header'da açılır menü olur.
+  const mapNavHref = (url: string) => (url.startsWith("#") ? url : storeHref(url));
+  const NAV_LINKS: { label: string; href: string; children?: { label: string; href: string }[] }[] = (
+    ts?.nav_links && ts.nav_links.length > 0
+      ? ts.nav_links
+      : [
+          { label: "Tüm Ürünler",   url: "/urunler" },
+          { label: "Koleksiyonlar", url: "/urunler" },
+          { label: "Hakkımızda",    url: "#hakkimizda" },
+          { label: "İletişim",      url: "#iletisim" },
+        ]
+  ).map((l) => ({
+    label: l.label,
+    href: mapNavHref(l.url),
+    children: ("children" in l && l.children?.length)
+      ? l.children.map((child) => ({ label: child.label, href: mapNavHref(child.url) }))
+      : undefined,
+  }));
 
   const LEGAL_LINKS = [
     { label: "Gizlilik Politikası",        href: storeHref("/legal/gizlilik-politikasi") },
@@ -388,6 +427,7 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
   const [menuOpen,   setMenuOpen]   = useState(false);
   const [scrolled,   setScrolled]   = useState(false);
   const [showSticky, setShowSticky] = useState(false);
+  const [openNav,    setOpenNav]    = useState<string | null>(null); // açık dropdown menü etiketi
 
   // Para birimi seçici (görsel tercih — fiyatlar mağaza para biriminde tutulur)
   const [displayCurrency, setDisplayCurrency] = useState(store.currency ?? "TRY");
@@ -444,7 +484,8 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
     : {};
 
   const scrollToBuy = () => buyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  const heroImage   = images[0] ?? null;
+  // Hero arka planı: editörden yüklenen görsel öncelikli, yoksa ürün görseli
+  const heroImage   = ts?.hero_image_url || images[0] || null;
   const buildItem   = () => ({ id: fp?.id ?? store.id, name: productName, price: productPrice, image: heroImage });
   const handleAddToCart = () => { addItem(buildItem()); openDrawer(); trackEvent("add_to_cart"); };
   const handleBuyNow    = () => { addItem(buildItem()); openCheckout(); trackEvent("checkout"); };
@@ -519,16 +560,76 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
           <Menu className="w-5 h-5" style={{ color: headerIconColor }} />
         </button>
 
-        <nav className="hidden md:flex items-center gap-8 flex-1">
-          {NAV_LINKS.map(({ label, href }) => (
-            <a
-              key={label} href={href}
-              className="text-[13px] font-medium tracking-wide transition-opacity hover:opacity-50"
-              style={{ color: scrolled ? t.textColor : "rgba(255,255,255,0.85)" }}
-            >
-              {label}
-            </a>
-          ))}
+        {/* Dinamik küçülen gap + truncate: 6 menüye kadar taşmadan sığar */}
+        <nav className="hidden md:flex items-center gap-x-3 xl:gap-x-6 flex-1 min-w-0">
+          {NAV_LINKS.map(({ label, href, children }) => {
+            const hasChildren = !!children?.length;
+            const isOpen = openNav === label;
+            return (
+              <div
+                key={label}
+                className="relative"
+                onMouseEnter={() => hasChildren && setOpenNav(label)}
+                onMouseLeave={() => setOpenNav((v) => (v === label ? null : v))}
+              >
+                <a
+                  href={href}
+                  onClick={(e) => {
+                    // Alt menülü elemanda tık, menüyü açar/kapatır (dokunmatik desteği)
+                    if (hasChildren) { e.preventDefault(); setOpenNav(isOpen ? null : label); }
+                  }}
+                  className="flex items-center gap-1 text-[13px] font-medium tracking-wide transition-opacity hover:opacity-50 whitespace-nowrap"
+                  style={{ color: scrolled ? t.textColor : "rgba(255,255,255,0.85)" }}
+                >
+                  <span className="truncate max-w-[104px] xl:max-w-[150px]">{label}</span>
+                  {hasChildren && (
+                    <ChevronDown
+                      className="w-3 h-3 transition-transform duration-200"
+                      style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}
+                    />
+                  )}
+                </a>
+
+                {/* Açılır alt menü — pürüzsüz mikro animasyon */}
+                <AnimatePresence>
+                  {hasChildren && isOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                      transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                      className="absolute left-0 top-full pt-2.5 z-50"
+                    >
+                      <div
+                        className="min-w-[190px] rounded-xl overflow-hidden py-1.5"
+                        style={{
+                          background: `${t.headerBg}f8`,
+                          backdropFilter: "blur(20px)",
+                          WebkitBackdropFilter: "blur(20px)",
+                          border: `1px solid ${t.borderColor}`,
+                          boxShadow: "0 18px 44px rgba(0,0,0,0.16)",
+                        }}
+                      >
+                        {children!.map((child) => (
+                          <a
+                            key={child.label}
+                            href={child.href}
+                            onClick={(e) => { if (previewMode) e.preventDefault(); }}
+                            className="flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium transition-colors"
+                            style={{ color: t.textColor }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = `${t.accentColor}10`; e.currentTarget.style.color = t.accentColor; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = t.textColor; }}
+                          >
+                            {child.label}
+                          </a>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          })}
         </nav>
 
         {ts?.logo_url ? (
@@ -599,14 +700,27 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
                 <button onClick={() => setMenuOpen(false)}><X className="w-5 h-5" style={{ color: t.subtleText }} /></button>
               </div>
               <nav className="flex flex-col">
-                {[{ label: "Ana Sayfa", href: previewMode ? "#" : (base || "/") }, ...NAV_LINKS].map(({ label, href }) => (
-                  <a
-                    key={label} href={href} onClick={() => setMenuOpen(false)}
-                    className="text-base py-4 transition-opacity hover:opacity-50"
-                    style={{ color: t.textColor, borderBottom: `1px solid ${t.borderColor}`, fontFamily: t.fontFamilySans }}
-                  >
-                    {label}
-                  </a>
+                {([{ label: "Ana Sayfa", href: previewMode ? "#" : (base || "/"), children: undefined }, ...NAV_LINKS]).map(({ label, href, children }) => (
+                  <div key={label} style={{ borderBottom: `1px solid ${t.borderColor}` }}>
+                    <a
+                      href={href} onClick={() => setMenuOpen(false)}
+                      className="block text-base py-4 transition-opacity hover:opacity-50"
+                      style={{ color: t.textColor, fontFamily: t.fontFamilySans }}
+                    >
+                      {label}
+                    </a>
+                    {/* Alt menüler — girintili hiyerarşi */}
+                    {children?.map((child) => (
+                      <a
+                        key={child.label} href={child.href} onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2 text-sm py-2.5 pl-5 transition-opacity hover:opacity-50"
+                        style={{ color: t.subtleText, fontFamily: t.fontFamilySans }}
+                      >
+                        <ChevronRight className="w-3 h-3" style={{ opacity: 0.5 }} />
+                        {child.label}
+                      </a>
+                    ))}
+                  </div>
                 ))}
               </nav>
               {socialLinks.length > 0 && (
@@ -1275,17 +1389,16 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
                 ? "$" + prodPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })
                 : prodPrice.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " ₺";
               return (
-                <motion.div
+                <motion.a
                   key={prod.id}
+                  href={storeHref(`/urun/${prod.id}`)}
+                  // Önizleme modunda yönlendirme engellenir; tıklama hissiyatı korunur
+                  onClick={(e) => { if (previewMode) e.preventDefault(); }}
                   whileHover={{ y: -4 }}
+                  whileTap={{ scale: 0.98 }}
                   transition={{ type: "spring", stiffness: 340, damping: 28 }}
-                  className="rounded-2xl overflow-hidden cursor-pointer"
-                  style={{ background: t.cardBg ?? t.bgColor, border: `1px solid ${t.borderColor}` }}
-                  onClick={() => {
-                    addItem({ id: prod.id, name: prod.name, price: prodPrice, image: prodImg });
-                    openDrawer();
-                    trackEvent("add_to_cart");
-                  }}
+                  className="rounded-2xl overflow-hidden cursor-pointer block"
+                  style={{ background: t.cardBg ?? t.bgColor, border: `1px solid ${t.borderColor}`, textDecoration: "none" }}
                 >
                   <div className="aspect-square relative" style={{ background: t.galleryBg }}>
                     {prodImg ? (
@@ -1307,7 +1420,7 @@ function StoreViewInner({ store, overrideTheme, previewMode, focusProduct }: Pro
                       {priceDisplay}
                     </p>
                   </div>
-                </motion.div>
+                </motion.a>
               );
             })}
           </div>

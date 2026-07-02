@@ -71,6 +71,41 @@ function sanitizeThemeSettings(raw: unknown): Record<string, unknown> | null {
   if (isHttpUrl(src.social_twitter))   out.social_twitter   = src.social_twitter;
   if (isHttpUrl(src.social_facebook))  out.social_facebook  = src.social_facebook;
 
+  // Navigasyon menüsü — iki kademeli hiyerarşi (max 1 derinlik). Ana ve alt
+  // elemanlarda max 6 kayıt; url yalnızca site-içi path ("/") veya anchor ("#").
+  const cleanNavItem = (raw: unknown): { label: string; url: string } | null => {
+    if (typeof raw !== "object" || raw === null) return null;
+    const o = raw as Record<string, unknown>;
+    if (typeof o.label !== "string" || !o.label.trim()) return null;
+    const url = typeof o.url === "string" && (o.url.startsWith("/") || o.url.startsWith("#"))
+      ? o.url.slice(0, 100)
+      : "#";
+    return { label: o.label.trim().slice(0, 30), url };
+  };
+
+  if (Array.isArray(src.nav_links)) {
+    const links = (src.nav_links as unknown[]).slice(0, 6).flatMap((l) => {
+      const base = cleanNavItem(l);
+      if (!base) return [];
+      const rawChildren = (l as Record<string, unknown>).children;
+      const children = Array.isArray(rawChildren)
+        ? rawChildren.slice(0, 6)
+            .map(cleanNavItem)
+            .filter((c): c is { label: string; url: string } => c !== null)
+        : [];
+      return [{ ...base, ...(children.length > 0 ? { children } : {}) }];
+    });
+    if (links.length > 0) out.nav_links = links;
+  }
+
+  // Hero arka plan görseli + gece modu
+  if (
+    typeof src.hero_image_url === "string" &&
+    (/^https?:\/\//.test(src.hero_image_url) || src.hero_image_url.startsWith("data:image/")) &&
+    src.hero_image_url.length <= 3_000_000
+  ) out.hero_image_url = src.hero_image_url;
+  if (typeof src.dark_mode === "boolean") out.dark_mode = src.dark_mode;
+
   return out;
 }
 

@@ -201,76 +201,139 @@ function ThemeCard({
   bodyFont: string;
 }) {
   const th = THEMES[themeId];
+  // StoreView'in yerleşim karakteri: luxury = ortalanmış hero · artisan = full-bleed
+  // sıcak banner · tech (modern/dinamik/kurumsal) = sola dayalı split grid
+  const layout = themeId === "luxury" ? "luxury" : themeId === "artisan" ? "artisan" : "tech";
+  const btnRadius = th.btnRadius === "9999px" ? 9999 : parseInt(th.btnRadius, 10) || 3;
+
   return (
     <motion.button
       type="button"
       onClick={onClick}
-      whileHover={{ y: -3, scale: 1.02 }}
-      whileTap={{ scale: 0.97 }}
+      animate={{ y: isActive ? -2 : 0 }}
+      whileHover={{ y: -2, scale: 1.02 }}
+      whileTap={{ scale: 0.96, y: -1 }}
+      transition={{ type: "spring", stiffness: 420, damping: 28 }}
       className="relative flex flex-col items-center gap-1.5 flex-shrink-0"
       style={{ width: 72 }}
     >
-      <div
-        className="w-full rounded-xl overflow-hidden"
-        style={{
-          aspectRatio: "3/4",
-          border: isActive
-            ? `2px solid ${th.accentColor}`
-            : "2px solid rgba(0,0,0,0.07)",
-          boxShadow: isActive
-            ? `0 0 0 3px ${th.accentColor}22, 0 8px 20px ${th.accentColor}1A`
-            : "0 2px 8px rgba(0,0,0,0.05)",
-          transition: "all 0.25s ease",
-        }}
-      >
-        {/* Simulated store layout */}
-        <div className="w-full h-full flex flex-col" style={{ background: th.bgColor }}>
-          {/* Header */}
-          <div
-            className="flex items-center justify-between px-1.5 py-1"
-            style={{ background: th.headerBg, borderBottom: `1px solid ${th.borderColor}` }}
-          >
-            <div className="w-5 h-1 rounded-full" style={{ background: th.titleColor, opacity: 0.5 }} />
-            <div className="w-2 h-2 rounded-full" style={{ background: th.accentColor }} />
-          </div>
-          {/* Product image area */}
-          <div className="mx-1 mt-0.5 mb-0.5 rounded-md flex-1" style={{ background: th.galleryBg }} />
-          {/* Info + buttons */}
-          <div className="px-1.5 pb-1.5 space-y-1">
-            <div className="h-1 rounded-full" style={{ background: th.titleColor, opacity: 0.6, width: "65%" }} />
-            <div className="flex gap-1">
+      <div className="relative w-full">
+        <div
+          className="w-full rounded-xl overflow-hidden"
+          style={{
+            aspectRatio: "3/4",
+            border: isActive
+              ? `2px solid ${th.accentColor}`
+              : "2px solid rgba(0,0,0,0.07)",
+            boxShadow: isActive
+              ? `0 0 0 3px ${th.accentColor}26, 0 12px 28px ${th.accentColor}45`
+              : "0 2px 8px rgba(0,0,0,0.05)",
+            transition: "box-shadow 0.3s ease, border-color 0.25s ease",
+          }}
+        >
+          <div className="w-full h-full flex flex-col" style={{ background: th.bgColor }}>
+
+            {/* Mikro header şeridi */}
+            <div
+              className="flex items-center justify-between px-1.5 py-[3px] flex-shrink-0"
+              style={{ background: th.headerBg, borderBottom: `1px solid ${th.borderColor}` }}
+            >
+              <div className="w-4 h-[3px] rounded-full" style={{ background: th.titleColor, opacity: 0.55 }} />
+              <div className="w-1.5 h-1.5 rounded-full" style={{ background: th.accentColor }} />
+            </div>
+
+            {/* Hero iskeleti — yerleşim karakteri + "Aa" tipografi önizlemesi */}
+            <div
+              className={`relative mx-1 mt-1 rounded-[5px] flex-1 flex flex-col justify-end overflow-hidden ${
+                layout === "luxury" ? "items-center" : "items-start"
+              }`}
+              style={{ background: th.galleryBg, padding: "4px 5px" }}
+            >
+              {/* Layout'a özgü hero karartma gradyanı (StoreView imitasyonu) */}
               <div
-                className="h-1.5 flex-1 rounded"
+                className="absolute inset-0 pointer-events-none"
                 style={{
-                  background: th.solidBtn,
-                  borderRadius: th.btnRadius === "9999px" ? "9999px" : "3px",
+                  background:
+                    layout === "luxury"
+                      ? "linear-gradient(to bottom, transparent 25%, rgba(0,0,0,0.42) 100%)"
+                      : layout === "artisan"
+                      ? "linear-gradient(150deg, rgba(61,51,38,0.48) 0%, transparent 55%, rgba(0,0,0,0.38) 100%)"
+                      : "linear-gradient(105deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.18) 55%, transparent 100%)",
                 }}
               />
-              <div
-                className="h-1.5 flex-1 rounded opacity-30"
+              <span
+                className="relative leading-none select-none"
                 style={{
-                  background: th.accentColor,
-                  borderRadius: th.btnRadius === "9999px" ? "9999px" : "3px",
+                  fontFamily: th.fontFamily,
+                  fontSize: 15,
+                  color: "#FFFFFF",
+                  fontWeight: layout === "tech" ? 800 : 400,
+                  textShadow: "0 1px 3px rgba(0,0,0,0.45)",
                 }}
+              >
+                Aa
+              </span>
+              <div
+                className="relative mt-[3px] h-[2.5px] rounded-full"
+                style={{ width: layout === "luxury" ? "58%" : "78%", background: "rgba(255,255,255,0.55)" }}
               />
+              {/* Mikro CTA — temanın kendi buton köşe karakteriyle */}
+              <div
+                className="relative mt-[3px] h-[5px]"
+                style={{ width: layout === "luxury" ? 24 : 19, background: th.solidBtn, borderRadius: btnRadius }}
+              />
+            </div>
+
+            {/* Alt bölüm — layout'a özgü grid dizilimi */}
+            <div className="px-1 py-1 flex-shrink-0">
+              {layout === "tech" ? (
+                /* Split grid: yan yana iki ürün kartı */
+                <div className="flex gap-[3px]">
+                  {[0, 1].map((i) => (
+                    <div key={i} className="flex-1 rounded-[3px] overflow-hidden"
+                      style={{ border: `1px solid ${th.borderColor}` }}>
+                      <div className="h-[7px]" style={{ background: th.cardBg }} />
+                      <div className="h-[3px]" style={{ background: th.accentColor, opacity: 0.35 }} />
+                    </div>
+                  ))}
+                </div>
+              ) : layout === "artisan" ? (
+                /* Full-bleed stacked banner */
+                <div className="rounded-[3px] overflow-hidden" style={{ border: `1px solid ${th.borderColor}` }}>
+                  <div className="h-[7px]" style={{ background: th.cardBg }} />
+                  <div className="h-[3px] w-2/3" style={{ background: th.accentColor, opacity: 0.4 }} />
+                </div>
+              ) : (
+                /* Luxury: ortalanmış zarif satırlar */
+                <div className="space-y-[3px]">
+                  <div className="h-[3px] rounded-full mx-auto" style={{ width: "55%", background: th.titleColor, opacity: 0.5 }} />
+                  <div className="h-[3px] rounded-full mx-auto" style={{ width: "35%", background: th.accentColor, opacity: 0.55 }} />
+                </div>
+              )}
             </div>
           </div>
         </div>
-        {/* Active check overlay */}
-        {isActive && (
-          <div
-            className="absolute inset-0 flex items-start justify-end p-1.5 pointer-events-none"
-            style={{ background: `${th.accentColor}12` }}
-          >
-            <div
-              className="w-4 h-4 rounded-full flex items-center justify-center"
-              style={{ background: th.accentColor }}
+
+        {/* Zarif check rozeti — sağ üst köşe, spring pop animasyonuyla */}
+        <AnimatePresence>
+          {isActive && (
+            <motion.div
+              initial={{ scale: 0, rotate: -30 }}
+              animate={{ scale: 1, rotate: 0 }}
+              exit={{ scale: 0, rotate: 20 }}
+              transition={{ type: "spring", stiffness: 520, damping: 22 }}
+              className="absolute -top-1.5 -right-1.5 w-[18px] h-[18px] rounded-full flex items-center justify-center"
+              style={{
+                background: th.accentColor,
+                boxShadow: `0 0 0 2px #FAFAF8, 0 3px 10px ${th.accentColor}66`,
+              }}
             >
-              <Check className="w-2.5 h-2.5 text-white" />
-            </div>
-          </div>
-        )}
+              <Check className="w-2.5 h-2.5 text-white" strokeWidth={3.5} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
+
       <span
         className="text-[11px] font-semibold truncate w-full text-center"
         style={{

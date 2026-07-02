@@ -8,23 +8,70 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, Reorder, useDragControls } from "framer-motion";
 import {
   Store as StoreIcon, Megaphone, Palette, Circle, Rocket, Loader2, CheckCircle,
   AlertCircle, ShoppingBag, Monitor, Type, Image as ImageIcon, LayoutTemplate,
   Upload, X, ArrowRight, Sparkles, Undo2, Truck, Award, Gem,
   Smartphone, Tablet, ChevronDown, PanelTop, Instagram, Twitter, Facebook, Layers,
+  Menu as MenuIcon, GripVertical, Plus, Moon, CornerDownRight, ListPlus,
 } from "lucide-react";
 import {
   usePanelTheme, PANEL_BODY_FONT, PANEL_DISPLAY_FONT, type PanelPalette,
 } from "../_lib/theme";
 import { useActiveStore } from "../_lib/storeContext";
 import { THEMES, THEME_FONT_NAMES, themeFontStack, type ThemeId } from "@/types/theme";
-import type { Store } from "@/types/store";
-import { CountdownTimer } from "@/app/store/[domain]/StoreView";
+import type { Store, StoreThemeSettings } from "@/types/store";
+import { CountdownTimer, applyThemeSettings } from "@/app/store/[domain]/StoreView";
 
 // ─── Editor state modeli ─────────────────────────────────────────────────────
 // Yayınlandığında stores.theme_settings (jsonb) kolonuna snake_case yazılır.
+
+// Nav menü elemanları — id yalnızca editör içi (drag/reorder kimliği), yayında atılır.
+// İki kademeli hiyerarşi: ana eleman + opsiyonel alt menü (max 1 derinlik).
+type NavChild = { id: string; label: string; url: string };
+type NavLink  = { id: string; label: string; url: string; children?: NavChild[] };
+
+const DEFAULT_NAV_LINKS: Omit<NavLink, "id">[] = [
+  { label: "Tüm Ürünler",   url: "/urunler" },
+  { label: "Koleksiyonlar", url: "/urunler" },
+  { label: "Hakkımızda",    url: "#hakkimizda" },
+  { label: "İletişim",      url: "#iletisim" },
+];
+
+let navIdSeq = 0;
+const navId = () => `nav-${++navIdSeq}`;
+
+const MAX_NAV_LINKS = 6; // vitrin görsel dengesi için ana menü üst sınırı
+
+// ── Otomatik URL slug üretici ────────────────────────────────────────────────
+// "Yeni Ürünler" → "/yeni-urunler". Türkçe karakterler ASCII'ye çevrilir.
+const TR_CHAR_MAP: Record<string, string> = {
+  ç: "c", ğ: "g", ı: "i", i̇: "i", ö: "o", ş: "s", ü: "u",
+  Ç: "c", Ğ: "g", İ: "i", I: "i", Ö: "o", Ş: "s", Ü: "u",
+};
+
+function slugify(text: string): string {
+  return text
+    .split("")
+    .map((ch) => TR_CHAR_MAP[ch] ?? ch)
+    .join("")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+const autoSlugUrl = (label: string): string => {
+  const s = slugify(label);
+  return s ? `/${s}` : "#";
+};
+
+// URL hâlâ otomatik türetilmiş durumdaysa (boş, "#" veya önceki etiketin slug'ı)
+// etiket yazılırken senkron güncellenir; kullanıcı URL'e elle dokunduysa dokunulmaz.
+const shouldAutoSlug = (currentUrl: string, prevLabel: string): boolean => {
+  const u = currentUrl.trim();
+  return u === "" || u === "#" || u === autoSlugUrl(prevLabel);
+};
 
 type EditorSettings = {
   themeId:          ThemeId; // baz tema — stores.theme kolonuna yazılır
@@ -43,6 +90,9 @@ type EditorSettings = {
   socialInstagram:  string;
   socialTwitter:    string;
   socialFacebook:   string;
+  navLinks:         NavLink[]; // vitrin nav menüsü (inline düzenlenebilir + sıralanabilir)
+  heroImageUrl:     string;    // hero arka plan görseli override ("" → ürün görseli)
+  darkMode:         boolean;   // vitrin gece modu
 };
 
 // Editörde önizlenen dükkanın cihaz modu — sadece yerel görünüm, yayınlanmaz
@@ -76,6 +126,15 @@ function fromStore(s: Store): EditorSettings {
     socialInstagram:  ts?.social_instagram  ?? "",
     socialTwitter:    ts?.social_twitter    ?? "",
     socialFacebook:   ts?.social_facebook   ?? "",
+    navLinks: (ts?.nav_links?.length ? ts.nav_links : DEFAULT_NAV_LINKS)
+      .map((l) => ({
+        id: navId(), label: l.label, url: l.url,
+        children: ("children" in l && l.children?.length)
+          ? l.children.map((child) => ({ id: navId(), label: child.label, url: child.url }))
+          : undefined,
+      })),
+    heroImageUrl:     ts?.hero_image_url ?? "",
+    darkMode:         ts?.dark_mode      ?? false,
   };
 }
 
@@ -85,7 +144,23 @@ const FALLBACK_SETTINGS: EditorSettings = {
   fontHeading: "", fontBody: "", heroTitle: "", heroSubtitle: "", heroOverlay: 0, logoUrl: "",
   showCountdown: false, showCurrencySelector: false,
   socialInstagram: "", socialTwitter: "", socialFacebook: "",
+  navLinks: DEFAULT_NAV_LINKS.map((l) => ({ id: navId(), ...l })),
+  heroImageUrl: "", darkMode: false,
 };
+
+// ─── Premium hazır seçimler ──────────────────────────────────────────────────
+
+const FONT_PAIRINGS = [
+  { name: "Zarif Serif",    heading: "Playfair Display", body: "Lora" },
+  { name: "Keskin Modern",  heading: "Montserrat",       body: "Inter" },
+  { name: "Brütalist Mono", heading: "Space Grotesk",    body: "JetBrains Mono" },
+];
+
+const RADIUS_PRESETS = [
+  { label: "Keskin Köşeler",  value: 0 },
+  { label: "Yumuşak Modern",  value: 10 },
+  { label: "Tam Oval / Pill", value: 28 },
+];
 
 /** Protokolsüz girilen sosyal linklere https:// ekler — sanitizer http(s) şart koşar. */
 function normalizeUrl(v: string): string | null {
@@ -288,6 +363,351 @@ function ThemePicker({ value, onChange, c }: {
   );
 }
 
+// ─── NavLinksEditor — iki kademeli hiyerarşik, sürükle-bırak sıralanabilir menü ──
+// Ana elemanlar kendi grubunda, alt menüler ebeveynlerinin içindeki bağımsız
+// Reorder grubunda sıralanır. Drag yalnızca grip tutamacından başlar
+// (dragListener kapalı) — böylece iç içe gruplar birbirinin sürüklemesini bozmaz.
+
+function NavChildRow({ child, canDelete, onPatch, onRemove, c }: {
+  child: NavChild; canDelete: boolean;
+  onPatch: (patch: Partial<NavChild>) => void; onRemove: () => void;
+  c: PanelPalette;
+}) {
+  const controls = useDragControls();
+
+  // Etiket yazılırken URL hâlâ otomatikse slug senkron üretilir
+  const handleLabel = (v: string) => {
+    const patch: Partial<NavChild> = { label: v };
+    if (shouldAutoSlug(child.url, child.label)) patch.url = autoSlugUrl(v);
+    onPatch(patch);
+  };
+  const handleUrlBlur = () => {
+    const u = child.url.trim();
+    if (!u) onPatch({ url: autoSlugUrl(child.label) });
+    else if (!u.startsWith("/") && !u.startsWith("#")) onPatch({ url: `/${u}` });
+  };
+
+  return (
+    <Reorder.Item
+      value={child}
+      dragListener={false}
+      dragControls={controls}
+      whileDrag={{ scale: 1.02, boxShadow: "0 6px 18px rgba(0,0,0,0.16)", zIndex: 10 }}
+      className="flex items-center gap-1.5 pl-8 pr-2 py-1 rounded-lg"
+      style={{ background: c.hover, border: `1px solid ${c.borderSoft}` }}
+    >
+      {/* Hiyerarşi dirseği */}
+      <CornerDownRight className="w-3 h-3 flex-shrink-0" style={{ color: c.textSubtle, opacity: 0.7 }} />
+      <button
+        onPointerDown={(e) => controls.start(e)}
+        className="cursor-grab active:cursor-grabbing flex-shrink-0 touch-none"
+        title="Sürükleyerek sırala"
+      >
+        <GripVertical className="w-3 h-3" style={{ color: c.textSubtle }} />
+      </button>
+      <input
+        type="text"
+        value={child.label}
+        onChange={(e) => handleLabel(e.target.value)}
+        onBlur={() => { if (!child.label.trim()) onPatch({ label: "İsimsiz Menü" }); }}
+        className="flex-1 min-w-0 bg-transparent text-[11px] font-medium focus:outline-none"
+        style={{ color: c.textMuted, fontFamily: PANEL_BODY_FONT }}
+      />
+      {/* Alt menü rotası — özgürce düzenlenebilir */}
+      <input
+        type="text"
+        value={child.url}
+        onChange={(e) => onPatch({ url: e.target.value })}
+        onBlur={handleUrlBlur}
+        placeholder="/rota veya #bölüm"
+        className="w-[92px] flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-mono focus:outline-none"
+        style={{ background: c.inputBg, border: `1px solid ${c.borderSoft}`, color: c.textSubtle }}
+        title="Alt menü rotası"
+      />
+      <button
+        onClick={onRemove}
+        disabled={!canDelete}
+        className="w-[18px] h-[18px] rounded flex items-center justify-center flex-shrink-0 disabled:opacity-30"
+        style={{ background: "#DC262612" }}
+        title="Alt menüyü kaldır"
+      >
+        <X className="w-2.5 h-2.5" style={{ color: "#DC2626" }} />
+      </button>
+    </Reorder.Item>
+  );
+}
+
+function NavParentRow({ link, canDelete, onPatch, onRemove, c, accent }: {
+  link: NavLink; canDelete: boolean;
+  onPatch: (patch: Partial<NavLink>) => void; onRemove: () => void;
+  c: PanelPalette; accent: string;
+}) {
+  const controls = useDragControls();
+  const children = link.children ?? [];
+
+  const addChild = () => {
+    if (children.length >= 6) return;
+    onPatch({ children: [...children, { id: navId(), label: "Yeni Alt Menü", url: autoSlugUrl("Yeni Alt Menü") }] });
+  };
+
+  // Etiket yazılırken URL hâlâ otomatikse slug senkron üretilir
+  const handleLabel = (v: string) => {
+    const patch: Partial<NavLink> = { label: v };
+    if (shouldAutoSlug(link.url, link.label)) patch.url = autoSlugUrl(v);
+    onPatch(patch);
+  };
+  const handleUrlBlur = () => {
+    const u = link.url.trim();
+    if (!u) onPatch({ url: autoSlugUrl(link.label) });
+    else if (!u.startsWith("/") && !u.startsWith("#")) onPatch({ url: `/${u}` });
+  };
+
+  return (
+    <Reorder.Item
+      value={link}
+      dragListener={false}
+      dragControls={controls}
+      whileDrag={{ scale: 1.03, boxShadow: "0 8px 24px rgba(0,0,0,0.18)", zIndex: 10 }}
+      className="space-y-1"
+    >
+      {/* Ana eleman kartı */}
+      <div
+        className="flex items-center gap-2 px-2 py-1.5 rounded-lg"
+        style={{ background: c.inputBg, border: `1px solid ${c.borderSoft}` }}
+      >
+        <button
+          onPointerDown={(e) => controls.start(e)}
+          className="cursor-grab active:cursor-grabbing flex-shrink-0 touch-none"
+          title="Sürükleyerek sırala"
+        >
+          <GripVertical className="w-3.5 h-3.5" style={{ color: c.textSubtle }} />
+        </button>
+        <input
+          type="text"
+          value={link.label}
+          onChange={(e) => handleLabel(e.target.value)}
+          onBlur={() => { if (!link.label.trim()) onPatch({ label: "İsimsiz Menü" }); }}
+          className="flex-1 min-w-0 bg-transparent text-xs font-medium focus:outline-none"
+          style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}
+        />
+        {/* Rota — özgürce düzenlenebilir, etiketten otomatik slug'lanır */}
+        <input
+          type="text"
+          value={link.url}
+          onChange={(e) => onPatch({ url: e.target.value })}
+          onBlur={handleUrlBlur}
+          placeholder="/rota"
+          className="w-[92px] flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-mono focus:outline-none"
+          style={{ background: c.hover, border: `1px solid ${c.borderSoft}`, color: c.textSubtle }}
+          title="Menü rotası"
+        />
+        <button
+          onClick={addChild}
+          disabled={children.length >= 6}
+          className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 disabled:opacity-30 transition-transform hover:scale-110"
+          style={{ background: `${accent}14`, border: `1px solid ${accent}30` }}
+          title="Alt menü ekle"
+        >
+          <ListPlus className="w-3 h-3" style={{ color: accent }} />
+        </button>
+        <button
+          onClick={onRemove}
+          disabled={!canDelete}
+          className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 disabled:opacity-30"
+          style={{ background: "#DC262612" }}
+          title="Menüden kaldır"
+        >
+          <X className="w-3 h-3" style={{ color: "#DC2626" }} />
+        </button>
+      </div>
+
+      {/* Alt menüler — ebeveyn içinde bağımsız Reorder grubu */}
+      {children.length > 0 && (
+        <Reorder.Group
+          axis="y"
+          values={children}
+          onReorder={(next: NavChild[]) => onPatch({ children: next })}
+          className="space-y-1"
+        >
+          {children.map((child) => (
+            <NavChildRow
+              key={child.id}
+              child={child}
+              canDelete
+              onPatch={(p) => onPatch({ children: children.map((x) => x.id === child.id ? { ...x, ...p } : x) })}
+              onRemove={() => {
+                const rest = children.filter((x) => x.id !== child.id);
+                onPatch({ children: rest.length > 0 ? rest : undefined });
+              }}
+              c={c}
+            />
+          ))}
+        </Reorder.Group>
+      )}
+    </Reorder.Item>
+  );
+}
+
+function NavLinksEditor({ links, onChange, accent, c }: {
+  links: NavLink[]; onChange: (v: NavLink[]) => void; accent: string; c: PanelPalette;
+}) {
+  const patch = (id: string, p: Partial<NavLink>) =>
+    onChange(links.map((l) => (l.id === id ? { ...l, ...p } : l)));
+  const remove = (id: string) => {
+    if (links.length <= 1) return;
+    onChange(links.filter((l) => l.id !== id));
+  };
+  const atCapacity = links.length >= MAX_NAV_LINKS;
+  const add = () => {
+    if (atCapacity) return;
+    onChange([...links, { id: navId(), label: "Yeni Menü", url: autoSlugUrl("Yeni Menü") }]);
+  };
+
+  return (
+    <div className="space-y-2">
+      <Reorder.Group axis="y" values={links} onReorder={onChange} className="space-y-1.5">
+        {links.map((link) => (
+          <NavParentRow
+            key={link.id}
+            link={link}
+            canDelete={links.length > 1}
+            onPatch={(p) => patch(link.id, p)}
+            onRemove={() => remove(link.id)}
+            c={c} accent={accent}
+          />
+        ))}
+      </Reorder.Group>
+
+      <button
+        onClick={add}
+        disabled={atCapacity}
+        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+        style={{ border: `1px dashed ${c.border}`, color: accent, fontFamily: PANEL_BODY_FONT }}
+      >
+        <Plus className="w-3.5 h-3.5" />
+        Menü Elemanı Ekle
+      </button>
+
+      {/* Kapasite uyarısı — üst sınırda parlayan profesyonel uyarı */}
+      <AnimatePresence>
+        {atCapacity && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-[11px] font-medium leading-relaxed"
+            style={{
+              background: "#DC26260F",
+              border: "1px solid #DC262635",
+              color: "#DC2626",
+              boxShadow: "0 0 16px rgba(220,38,38,0.16)",
+              fontFamily: PANEL_BODY_FONT,
+            }}
+          >
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 animate-pulse" />
+            <span>
+              Maksimum menü kapasitesine ulaşıldı. Ziyaretçilerinizin ekran deneyimi için
+              en fazla {MAX_NAV_LINKS} ana menü ekleyebilirsiniz.
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <p className="text-[10px]" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+        Tutamaçtan sürükleyerek sıralayın; alt menüler kendi ebeveyni içinde sıralanır.
+        Alt menülü elemanlar vitrinde açılır menüye dönüşür.
+      </p>
+    </div>
+  );
+}
+
+// ─── HeroImageUploader — sürükle-bırak + mikro ilerleme çubuklu görsel alanı ──
+
+function HeroImageUploader({ value, onChange, onError, accent, c }: {
+  value: string; onChange: (v: string) => void; onError: (msg: string) => void;
+  accent: string; c: PanelPalette;
+}) {
+  const [progress, setProgress] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { onError("Lütfen bir görsel dosyası seçin."); return; }
+    if (file.size > 2.5 * 1024 * 1024) { onError("Hero görseli 2.5 MB'den küçük olmalıdır."); return; }
+    const reader = new FileReader();
+    setProgress(0);
+    reader.onprogress = (e) => {
+      if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    reader.onload = () => {
+      setProgress(100);
+      setTimeout(() => { onChange(String(reader.result ?? "")); setProgress(null); }, 280);
+    };
+    reader.onerror = () => { setProgress(null); onError("Görsel okunamadı, tekrar deneyin."); };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="space-y-2">
+      {value ? (
+        <div className="relative rounded-xl overflow-hidden group" style={{ border: `1px solid ${c.borderSoft}` }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={value} alt="Hero görseli" className="w-full h-24 object-cover" />
+          <button
+            onClick={() => onChange("")}
+            className="absolute top-2 right-2 w-6 h-6 rounded-lg flex items-center justify-center"
+            style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+            title="Görseli kaldır (ürün görseline dön)"
+          >
+            <X className="w-3.5 h-3.5 text-white" />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => fileRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files?.[0]); }}
+          className="w-full flex flex-col items-center justify-center gap-1.5 py-6 rounded-xl transition-all"
+          style={{
+            border: `1.5px dashed ${dragOver ? accent : c.border}`,
+            background: dragOver ? `${accent}0D` : c.cardBgSoft,
+          }}
+        >
+          <Upload className="w-4 h-4" style={{ color: dragOver ? accent : c.textSubtle }} />
+          <span className="text-[11px] font-semibold" style={{ color: dragOver ? accent : c.textMuted, fontFamily: PANEL_BODY_FONT }}>
+            {dragOver ? "Bırakın — anında uygulanır" : "Hero görselini sürükleyin veya tıklayın"}
+          </span>
+          <span className="text-[9px]" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
+            JPG · PNG · WEBP — max 2.5 MB
+          </span>
+        </button>
+      )}
+
+      {/* Mikro ilerleme çubuğu */}
+      <AnimatePresence>
+        {progress !== null && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="h-1 rounded-full overflow-hidden" style={{ background: c.hover }}>
+            <motion.div
+              className="h-full rounded-full"
+              style={{ background: accent }}
+              animate={{ width: `${progress}%` }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <input
+        ref={fileRef} type="file" accept="image/*" className="hidden"
+        onChange={(e) => { handleFile(e.target.files?.[0]); e.target.value = ""; }}
+      />
+    </div>
+  );
+}
+
 function ToggleSetting({ label, checked, onChange, accent, c }: {
   label: string; checked: boolean; onChange: (v: boolean) => void;
   accent: string; c: PanelPalette;
@@ -450,9 +870,17 @@ const WHY = [
 
 function PreviewStore({ s, store, device }: { s: EditorSettings; store: Store | null; device: DeviceMode }) {
   const isMobile = device === "mobile";
-  // Baz tema — editördeki seçimden gelir (yerel state → sıfır gecikme iskelet değişimi)
+  // Baz tema — editördeki seçimden gelir (yerel state → sıfır gecikme iskelet değişimi).
+  // applyThemeSettings ile gece modu dahil gerçek vitrin motoruyla aynı palet üretilir.
   const themeId: ThemeId = s.themeId;
-  const t      = THEMES[themeId];
+  const tsPreview: StoreThemeSettings = {
+    primary_color: s.primaryColor,
+    button_radius: s.buttonRadius,
+    font_heading:  s.fontHeading || null,
+    font_body:     s.fontBody    || null,
+    dark_mode:     s.darkMode,
+  };
+  const t      = applyThemeSettings(THEMES[themeId], tsPreview);
   const layout = themeId === "luxury" ? "luxury" : themeId === "artisan" ? "artisan" : "tech";
 
   const headingFont =
@@ -470,8 +898,8 @@ function PreviewStore({ s, store, device }: { s: EditorSettings; store: Store | 
   const productName  = store?.seo_title ?? store?.store_name ?? brand;
   const heroTitle    = s.heroTitle.trim() || productName;
   const heroSubtitle = s.heroSubtitle.trim() || store?.description?.trim() || SLOGAN;
-  const heroImage    = store?.image_urls?.[0] ?? null;
-  const galleryImage = store?.image_urls?.[1] ?? heroImage;
+  const heroImage    = s.heroImageUrl || store?.image_urls?.[0] || null;
+  const galleryImage = store?.image_urls?.[1] ?? store?.image_urls?.[0] ?? null;
 
   const price = store?.product_price ?? 0;
   const priceStr = store?.currency === "USD"
@@ -517,10 +945,40 @@ function PreviewStore({ s, store, device }: { s: EditorSettings; store: Store | 
         {/* Transparan header */}
         <div className="absolute top-0 inset-x-0 flex items-center justify-between px-6 h-14 z-10">
           {!isMobile && (
-            <nav className="flex items-center gap-5 flex-1">
-              {["Tüm Ürünler", "Koleksiyonlar", "Hakkımızda"].map((item) => (
-                <span key={item} className="text-[10px] font-medium tracking-wide" style={{ color: "rgba(255,255,255,0.85)" }}>
-                  {item}
+            <nav className="flex items-center gap-2.5 xl:gap-4 flex-1 min-w-0">
+              {s.navLinks.slice(0, 6).map((item) => (
+                <span key={item.id} className="relative group flex items-center gap-0.5 text-[10px] font-medium tracking-wide cursor-default"
+                  style={{ color: "rgba(255,255,255,0.85)" }}>
+                  <span className="truncate max-w-[58px] xl:max-w-[80px]">{item.label}</span>
+                  {item.children && item.children.length > 0 && (
+                    <>
+                      <ChevronDown className="w-2.5 h-2.5 flex-shrink-0 transition-transform group-hover:rotate-180" />
+                      {/* Hover'da açılır alt menü — mikro etkileşim */}
+                      <span
+                        className="absolute left-0 top-full mt-1.5 hidden group-hover:flex flex-col min-w-[110px] rounded-lg py-1 z-30"
+                        style={{
+                          background: "rgba(12,12,16,0.92)",
+                          backdropFilter: "blur(10px)",
+                          border: "1px solid rgba(255,255,255,0.14)",
+                          boxShadow: "0 12px 28px rgba(0,0,0,0.35)",
+                        }}
+                      >
+                        {item.children.map((child) => (
+                          /* Önizlemede yönlendirme simüle edilir — tıklama hissi canlı, rota değişmez */
+                          <a
+                            key={child.id}
+                            href={child.url}
+                            onClick={(e) => e.preventDefault()}
+                            className="px-3 py-1.5 text-[9px] font-medium hover:opacity-70 active:opacity-50 transition-opacity cursor-pointer"
+                            style={{ color: "rgba(255,255,255,0.88)", textDecoration: "none" }}
+                            title={child.url}
+                          >
+                            {child.label}
+                          </a>
+                        ))}
+                      </span>
+                    </>
+                  )}
                 </span>
               ))}
             </nav>
@@ -741,6 +1199,15 @@ export default function TasarimPage() {
             social_instagram:  normalizeUrl(settings.socialInstagram),
             social_twitter:    normalizeUrl(settings.socialTwitter),
             social_facebook:   normalizeUrl(settings.socialFacebook),
+            // Editör-içi id'ler atılır — DB'ye yalın {label, url, children?} yazılır
+            nav_links: settings.navLinks.map(({ label, url, children }) => ({
+              label, url,
+              ...(children?.length
+                ? { children: children.map((child) => ({ label: child.label, url: child.url })) }
+                : {}),
+            })),
+            hero_image_url: settings.heroImageUrl || null,
+            dark_mode:      settings.darkMode,
           },
         }),
       });
@@ -817,25 +1284,91 @@ export default function TasarimPage() {
               />
             </div>
 
+            {/* ── Navigasyon Menüsü Yönetimi ── */}
+            <AccordionSection icon={MenuIcon} iconColor="#0EA5E9" title="Navigasyon Menüsü Yönetimi" c={c}>
+              <NavLinksEditor
+                links={settings.navLinks}
+                onChange={(v) => set("navLinks", v)}
+                accent={settings.primaryColor} c={c}
+              />
+            </AccordionSection>
+
             <ColorSetting value={settings.primaryColor} onChange={(v) => set("primaryColor", v)} c={c} />
 
-            <SliderSetting
-              icon={Circle} iconColor="#0EA5E9" title="Buton Köşe Yuvarlaklığı"
-              value={settings.buttonRadius} onChange={(v) => set("buttonRadius", v)}
-              min={0} max={28} unit="px" marks={["Keskin", "Yumuşak", "Hap (Pill)"]}
-              accent={settings.primaryColor} c={c}
-            />
+            {/* ── Buton karakteri: tek tık preset + ince ayar slider'ı ── */}
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-1.5">
+                {RADIUS_PRESETS.map(({ label, value }) => {
+                  const active = settings.buttonRadius === value;
+                  return (
+                    <button
+                      key={label}
+                      onClick={() => set("buttonRadius", value)}
+                      className="px-2 py-2 text-[10px] font-bold leading-tight transition-all"
+                      style={{
+                        borderRadius: Math.max(value, 6),
+                        background: active ? `${settings.primaryColor}14` : c.cardBgSoft,
+                        border: active ? `1.5px solid ${settings.primaryColor}` : `1px solid ${c.borderSoft}`,
+                        color: active ? settings.primaryColor : c.textMuted,
+                        fontFamily: PANEL_BODY_FONT,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <SliderSetting
+                icon={Circle} iconColor="#0EA5E9" title="Buton Köşe Yuvarlaklığı"
+                value={settings.buttonRadius} onChange={(v) => set("buttonRadius", v)}
+                min={0} max={28} unit="px" marks={["Keskin", "Yumuşak", "Hap (Pill)"]}
+                accent={settings.primaryColor} c={c}
+              />
+            </div>
 
-            {/* ── Tipografi ── */}
+            {/* ── Tipografi: hazır eşleşmeler + ince ayar ── */}
             <div className="space-y-3">
               <SettingLabel icon={Type} iconColor="#8B5CF6" title="Tipografi" c={c} />
+              <div className="grid grid-cols-3 gap-1.5">
+                {FONT_PAIRINGS.map(({ name, heading, body }) => {
+                  const active = settings.fontHeading === heading && settings.fontBody === body;
+                  return (
+                    <button
+                      key={name}
+                      onClick={() => { set("fontHeading", heading); set("fontBody", body); }}
+                      className="flex flex-col items-center gap-1 px-2 py-2.5 rounded-xl transition-all"
+                      style={{
+                        background: active ? `${settings.primaryColor}14` : c.cardBgSoft,
+                        border: active ? `1.5px solid ${settings.primaryColor}` : `1px solid ${c.borderSoft}`,
+                      }}
+                    >
+                      <span className="text-base leading-none" style={{ fontFamily: themeFontStack(heading) ?? undefined, color: active ? settings.primaryColor : c.text }}>
+                        Aa
+                      </span>
+                      <span className="text-[9px] font-semibold leading-tight text-center"
+                        style={{ fontFamily: themeFontStack(body) ?? undefined, color: active ? settings.primaryColor : c.textSubtle }}>
+                        {name}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
               <FontSelect label="Başlık Fontu (Headings)" value={settings.fontHeading} onChange={(v) => set("fontHeading", v)} c={c} />
               <FontSelect label="Gövde Fontu (Body)"      value={settings.fontBody}    onChange={(v) => set("fontBody", v)}    c={c} />
             </div>
 
-            {/* ── Hero Banner ── */}
+            {/* ── Ana Sayfa Kahraman (Hero) Alanı ── */}
             <div className="space-y-4">
-              <SettingLabel icon={LayoutTemplate} iconColor="#0891B2" title="Hero Banner" c={c} />
+              <SettingLabel icon={LayoutTemplate} iconColor="#0891B2" title="Ana Sayfa Kahraman (Hero) Alanı" c={c} />
+
+              {/* Görsel değiştirici — sürükle-bırak + mikro progress bar */}
+              <HeroImageUploader
+                value={settings.heroImageUrl}
+                onChange={(v) => set("heroImageUrl", v)}
+                onError={(msg) => setFb({ type: "error", message: msg })}
+                accent={settings.primaryColor} c={c}
+              />
+
               <div className="space-y-1.5">
                 <label className="text-[11px] font-medium block" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>
                   Büyük Başlık — boş bırakılırsa ürün adı kullanılır
@@ -866,6 +1399,17 @@ export default function TasarimPage() {
                 icon={ImageIcon} iconColor="#64748B" title="Görsel Karartma"
                 value={settings.heroOverlay} onChange={(v) => set("heroOverlay", v)}
                 min={0} max={90} unit="%" marks={["Yok", "Dengeli", "Koyu"]}
+                accent={settings.primaryColor} c={c}
+              />
+            </div>
+
+            {/* ── Vitrin Görünümü ── */}
+            <div className="space-y-3">
+              <SettingLabel icon={Moon} iconColor="#6366F1" title="Vitrin Görünümü" c={c} />
+              <ToggleSetting
+                label="Canlı Karanlık Mod (Gece Vitrini)"
+                checked={settings.darkMode}
+                onChange={(v) => set("darkMode", v)}
                 accent={settings.primaryColor} c={c}
               />
             </div>

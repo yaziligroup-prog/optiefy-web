@@ -28,6 +28,14 @@ export type StoreThemeSettings = {
   social_instagram?:  string | null; // footer sosyal ikon linkleri — boşsa ikon gizlenir
   social_twitter?:    string | null;
   social_facebook?:   string | null;
+  // Vitrin nav menüsü — iki kademeli hiyerarşi (max 6 ana eleman, her birinde max 6 alt menü)
+  nav_links?:         {
+    label: string;
+    url: string;
+    children?: { label: string; url: string }[];
+  }[] | null;
+  hero_image_url?:    string | null; // hero arka plan görseli override (https veya data:image)
+  dark_mode?:         boolean | null; // vitrin gece modu
 };
 
 export type Store = {

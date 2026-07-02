@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import type { Store, Product } from "@/types/store";
-import StoreView from "../../StoreView";
+import ProductDetailView from "../../ProductDetailView";
 
 // Service role varsa RLS'yi atlar — koleksiyon sayfasıyla aynı erişim kalıbı
 const supabase = createClient(
@@ -50,9 +50,8 @@ export default async function ProductDetailPage({ params }: Props) {
   const product = findProduct(store, id);
   if (!product) notFound();
 
-  // StoreView, focusProduct ile tam teşekküllü ürün detay sayfasına dönüşür
-  // (hero, galeri, satın alma kutusu ve akordeonlar bu ürünün verisiyle dolar)
-  return <StoreView store={store} focusProduct={product} />;
+  // Framer estetiğinde iki sütunlu premium detay: solda galeri, sağda satın alma paneli
+  return <ProductDetailView store={store} product={product} />;
 }
 
 export const dynamic = "force-dynamic";

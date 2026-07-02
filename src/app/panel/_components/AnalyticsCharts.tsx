@@ -303,7 +303,7 @@ function ConversionFunnel({ funnel, isReal, c }: { funnel: FunnelData; isReal: b
 
 // ─── Ana bileşen ────────────────────────────────────────────────────────────────
 export default function AnalyticsCharts({
-  orders, c, analytics, fromDate, toDate, storeId,
+  orders, c, analytics, fromDate, toDate, storeId, trends,
 }: {
   orders: OrderWithItems[];
   c: PanelPalette;
@@ -311,6 +311,8 @@ export default function AnalyticsCharts({
   fromDate?: string;
   toDate?: string;
   storeId?: string | null;
+  /** /api/panel/stats'tan gelen önceki-dönem kıyas yüzdeleri */
+  trends?: { visitors: number | null; conversion: number | null };
 }) {
   const isReal = !!analytics?.hasData;
 
@@ -349,10 +351,12 @@ export default function AnalyticsCharts({
       {/* Metrik kartları — LiveTrafficCard izole, diğerleri analytics prop'tan */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard index={0} c={c} label="Toplam Ziyaretçi" value={fmtNum(totals.totalVisitors)}
-          trend={`%${Math.abs(totals.visTrend).toFixed(1)}`} trendUp={totals.visTrend >= 0}
+          trend={trends?.visitors != null ? `%${Math.abs(trends.visitors).toFixed(1)}` : `%${Math.abs(totals.visTrend).toFixed(1)}`}
+          trendUp={(trends?.visitors ?? totals.visTrend) >= 0}
           icon={Users} color="#7C3AED" />
         <MetricCard index={1} c={c} label="Dönüşüm Oranı" value={`%${totals.conversion.toFixed(1)}`}
-          trend={totals.totalOrders > 0 ? "aktif" : undefined} trendUp
+          trend={trends?.conversion != null ? `%${Math.abs(trends.conversion).toFixed(1)}` : (totals.totalOrders > 0 ? "aktif" : undefined)}
+          trendUp={trends?.conversion != null ? trends.conversion >= 0 : true}
           icon={TrendingUp} color="#22C55E" />
         {/* İzole canlı trafik kartı — sadece bu yenilenir, mağaza filtreli */}
         <LiveTrafficCard index={2} c={c} storeId={storeId} />

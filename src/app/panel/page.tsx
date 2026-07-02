@@ -438,11 +438,15 @@ const SUGGESTIONS = [
 // ─── StatCard ───────────────────────────────────────────────────────────────────
 
 function StatCard({
-  label, value, sub, icon: Icon, color, index, c, loading,
+  label, value, sub, icon: Icon, color, index, c, loading, trendPct,
 }: {
   label: string; value: string; sub: string;
   icon: typeof CircleDollarSign; color: string; index: number; c: PanelPalette; loading?: boolean;
+  /** Önceki eş dönemle kıyas yüzdesi — null: önceki dönem verisi yok */
+  trendPct?: number | null;
 }) {
+  const showTrend = typeof trendPct === "number" && Number.isFinite(trendPct);
+  const trendUp = showTrend && trendPct >= 0;
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.07 }}
@@ -462,12 +466,45 @@ function StatCard({
       ) : (
         <>
           <p className="text-2xl font-bold tracking-tight mb-1" style={{ color: c.text, fontFamily: PANEL_BODY_FONT }}>{value}</p>
-          <p className="text-[11px]" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>{sub}</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-[11px]" style={{ color: c.textSubtle, fontFamily: PANEL_BODY_FONT }}>{sub}</p>
+            {showTrend && (
+              <span
+                title="Önceki eş dönemle kıyas"
+                className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                style={{
+                  background: trendUp ? "rgba(5,150,105,0.10)" : "rgba(220,38,38,0.10)",
+                  color:      trendUp ? "#059669" : "#DC2626",
+                  fontFamily: PANEL_BODY_FONT,
+                }}
+              >
+                {trendUp ? "↑" : "↓"} %{Math.abs(trendPct).toFixed(1)}
+              </span>
+            )}
+          </div>
         </>
       )}
     </motion.div>
   );
 }
+
+// ─── Panel istatistik tipi (/api/panel/stats yanıtı) ─────────────────────────────
+
+type PanelStats = {
+  revenue: number;
+  orderCount: number;
+  deliveredCount: number;
+  pendingCount: number;
+  visitors: number;
+  conversion: number;
+  trends: {
+    revenue: number | null;
+    orders: number | null;
+    delivered: number | null;
+    visitors: number | null;
+    conversion: number | null;
+  };
+};
 
 // ─── Dashboard ──────────────────────────────────────────────────────────────────
 
@@ -493,6 +530,8 @@ export default function DashboardPage() {
 
   const [orders,       setOrders]      = useState<OrderWithItems[]>([]);
   const [loading,      setLoading]     = useState(true);
+  const [stats,        setStats]       = useState<PanelStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
   const [aLoading,     setALoading]    = useState(true);   // yalnızca ilk yükleme
   const [isRefreshing, setRefreshing]  = useState(false);  // tarih değişimi — hafif gösterge
   const [today,        setToday]       = useState("");
@@ -567,6 +606,21 @@ export default function DashboardPage() {
     }
   }, []);
 
+  // Üst metrik kartları — /api/panel/stats: tarih filtreli, trend kıyaslı tek doğruluk kaynağı
+  const fetchStats = useCallback(async (from: string, to: string, sid: string | null, storeStillLoading: boolean) => {
+    if (!sid) {
+      if (!storeStillLoading) { setStats(null); setStatsLoading(false); }
+      return;
+    }
+    setStatsLoading(true);
+    try {
+      const qs  = new URLSearchParams({ start: from, end: to, storeId: sid });
+      const res = await fetch(`/api/panel/stats?${qs}`, { cache: "no-store" });
+      if (res.ok) setStats((await res.json()) as PanelStats);
+    } catch { /* ağ hatası — mevcut değerler korunur */ }
+    setStatsLoading(false);
+  }, []);
+
   useEffect(() => {
     setToday(new Date().toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }));
   }, []);
@@ -580,17 +634,20 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStoreId, storeLoading]);
 
-  // Tarih aralığı veya mağaza değişince analitik çek
+  // Tarih aralığı veya mağaza değişince analitik + metrik kartlarını çek
+  // (sayfa yenilenmez — skeleton'lu sessiz re-fetch)
   useEffect(() => {
     fetchAnalytics(appliedRange.from, appliedRange.to, activeStoreId, storeLoading);
+    fetchStats(appliedRange.from, appliedRange.to, activeStoreId, storeLoading);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appliedRange, activeStoreId, storeLoading]);
 
-  // Yenile butonu — sipariş listesi + tüm analitik state'leri tek hamlede re-fetch
+  // Yenile butonu — sipariş listesi + metrikler + analitik tek hamlede re-fetch
   const handleRefresh = useCallback(() => {
     fetchOrders(activeStoreId, storeLoading);
     fetchAnalytics(appliedRange.from, appliedRange.to, activeStoreId, storeLoading);
-  }, [fetchOrders, fetchAnalytics, activeStoreId, storeLoading, appliedRange]);
+    fetchStats(appliedRange.from, appliedRange.to, activeStoreId, storeLoading);
+  }, [fetchOrders, fetchAnalytics, fetchStats, activeStoreId, storeLoading, appliedRange]);
 
   // Supabase Realtime — aktif mağazanın siparişlerinde INSERT/UPDATE/DELETE olduğu an
   // (yeni test siparişi, durum değişikliği vb.) sayaçlar ve grafikler otomatik tazelenir.
@@ -605,25 +662,26 @@ export default function DashboardPage() {
         () => {
           fetchOrders(activeStoreId, false);
           fetchAnalytics(appliedRange.from, appliedRange.to, activeStoreId, false);
+          fetchStats(appliedRange.from, appliedRange.to, activeStoreId, false);
         },
       )
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
-  }, [activeStoreId, appliedRange.from, appliedRange.to, fetchOrders, fetchAnalytics]);
+  }, [activeStoreId, appliedRange.from, appliedRange.to, fetchOrders, fetchAnalytics, fetchStats]);
 
-  // ── İstatistikler ──
-  const active         = orders.filter((o) => o.status !== "cancelled");
-  const revenue        = active.reduce((s, o) => s + Number(o.total ?? 0), 0);
-  const pendingCount   = orders.filter((o) => o.status === "preparing" || o.status === "pending").length;
-  const deliveredCount = orders.filter((o) => o.status === "delivered").length;
+  // ── İstatistikler — /api/panel/stats'tan kuruşu kuruşuna, tarih filtreli ──
+  const revenue        = stats?.revenue        ?? 0;
+  const orderCount     = stats?.orderCount     ?? 0;
+  const pendingCount   = stats?.pendingCount   ?? 0;
+  const deliveredCount = stats?.deliveredCount ?? 0;
   const todayCount     = orders.filter((o) => isToday(o.created_at)).length;
-  const deliveredPct   = orders.length ? Math.round((deliveredCount / orders.length) * 100) : 0;
+  const deliveredPct   = orderCount ? Math.round((deliveredCount / orderCount) * 100) : 0;
 
   const STATS = [
-    { label: "Toplam Ciro",         value: fmtTRY(revenue),        sub: `${active.length} geçerli sipariş`, icon: CircleDollarSign, color: "#22C55E" },
-    { label: "Bekleyen Siparişler", value: String(pendingCount),   sub: "Hazırlanıyor / onay bekliyor",     icon: Clock,            color: "#D97706" },
-    { label: "Toplam Sipariş",      value: String(orders.length),  sub: `Bugün: ${todayCount}`,             icon: ShoppingBag,      color: "#7C3AED" },
-    { label: "Teslim Edilen",       value: String(deliveredCount), sub: `%${deliveredPct} tamamlandı`,      icon: CheckCircle2,     color: "#2563EB" },
+    { label: "Toplam Ciro",         value: fmtTRY(revenue),        sub: `${orderCount} başarılı sipariş`,  icon: CircleDollarSign, color: "#22C55E", trendPct: stats?.trends.revenue },
+    { label: "Bekleyen Siparişler", value: String(pendingCount),   sub: "Güncel — tarihten bağımsız",      icon: Clock,            color: "#D97706", trendPct: null },
+    { label: "Toplam Sipariş",      value: String(orderCount),     sub: `Bugün: ${todayCount}`,            icon: ShoppingBag,      color: "#7C3AED", trendPct: stats?.trends.orders },
+    { label: "Teslim Edilen",       value: String(deliveredCount), sub: `%${deliveredPct} tamamlandı`,     icon: CheckCircle2,     color: "#2563EB", trendPct: stats?.trends.delivered },
   ];
 
   const recent = orders.slice(0, 6);
@@ -710,9 +768,9 @@ export default function DashboardPage() {
         </motion.div>
       )}
 
-      {/* Stats */}
+      {/* Stats — tarih aralığına bağlı, trend kıyaslı */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {STATS.map((s, i) => <StatCard key={s.label} {...s} index={i} c={c} loading={loading} />)}
+        {STATS.map((s, i) => <StatCard key={s.label} {...s} index={i} c={c} loading={statsLoading && !stats} />)}
       </div>
 
       {/* ── Analitik & Grafikler ── */}
@@ -779,6 +837,7 @@ export default function DashboardPage() {
             fromDate={appliedRange.from}
             toDate={appliedRange.to}
             storeId={activeStoreId}
+            trends={stats ? { visitors: stats.trends.visitors, conversion: stats.trends.conversion } : undefined}
           />
         )}
       </motion.div>

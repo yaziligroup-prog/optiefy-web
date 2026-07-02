@@ -10,6 +10,7 @@ export const THEME_FONTS: Record<string, string> = {
   "Montserrat":       '"Montserrat", "Helvetica Neue", sans-serif',
   "Syne":             '"Syne", "Space Grotesk", sans-serif',
   "Space Grotesk":    '"Space Grotesk", "DM Sans", sans-serif',
+  "JetBrains Mono":   '"JetBrains Mono", "SF Mono", monospace',
 };
 
 export const THEME_FONT_NAMES = Object.keys(THEME_FONTS);

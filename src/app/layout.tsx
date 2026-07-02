@@ -1,17 +1,19 @@
 import type { Metadata, Viewport } from "next";
-import { DM_Serif_Display, Inter } from "next/font/google";
+import { Fraunces, Hanken_Grotesk } from "next/font/google";
 import { Analytics } from "@vercel/analytics/react";
 import "./globals.css";
 
-const dmSerifDisplay = DM_Serif_Display({
-  weight: ["400"],
-  subsets: ["latin"],
+// Durable.co tipografi eşleşmesi:
+// Başlıklar — Reckless muadili Fraunces (yumuşak, sıcak serif)
+// Gövde — Matter muadili Hanken Grotesk (yumuşak humanist grotesk)
+const fraunces = Fraunces({
+  subsets: ["latin", "latin-ext"],
   variable: "--font-display",
   display: "swap",
 });
 
-const inter = Inter({
-  subsets: ["latin"],
+const hankenGrotesk = Hanken_Grotesk({
+  subsets: ["latin", "latin-ext"],
   variable: "--font-body",
   display: "swap",
 });
@@ -37,7 +39,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="tr" suppressHydrationWarning>
-      <body className={`${dmSerifDisplay.variable} ${inter.variable} antialiased`}>
+      <body className={`${fraunces.variable} ${hankenGrotesk.variable} antialiased`}>
         {children}
         <Analytics />
       </body>
